@@ -58,9 +58,6 @@ void addMsg(Fila *fila, Mensagem msg ){
 
 //passar ponteiro
 //Mensagem m = getMensagem(&minhafila);
-
-
-//errado, ta uma pilha
 Mensagem getMsg(Fila *fila){
 
     //get lock
@@ -71,13 +68,20 @@ Mensagem getMsg(Fila *fila){
 
     }
 
-    fila->tamanho --;
+  
 
-    Mensagem retorno = fila->conteudo[fila->tamanho];
+    Mensagem retorno = fila->conteudo[0];
     
     //tira da lista zera os bytes
-    memset(&fila->conteudo[fila->tamanho], 0, sizeof(Mensagem));
+    memset(&fila->conteudo[0], 0, sizeof(Mensagem));
 
+    //faz voltar 1 pos
+    for(int i = 1; i<fila->tamanho;i++){
+        fila->conteudo[i-1] = fila->conteudo[i];
+    }
+
+    fila->tamanho --;
+    //deixar lock
     return retorno;
     
 
@@ -108,14 +112,16 @@ int main(){
 
     addMsg(&minhafila, msg1);
     addMsg(&minhafila, msg2);
-    addMsg(&minhafila, msg1);
+    addMsg(&minhafila, msg3);
+     addMsg(&minhafila, msg3);
 
 
     printFila(minhafila);
 
     Mensagem tirar = getMsg(&minhafila);
+    tirar = getMsg(&minhafila);
     //testar coisas da lista 
 
      printFila(minhafila);
-     //ta errado!!!
+    
 }
