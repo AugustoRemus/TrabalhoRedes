@@ -2,8 +2,8 @@
 #include <string.h>
 
 
-#define Controle 0;
-#define Dado 1;
+#define Controle 0
+#define Dado 1
 
 typedef struct{
     int tipo;//tipo de msg
@@ -39,10 +39,10 @@ Fila criarFila(){
 //passar como ponteiro
 //passar o semaforo para bloquear na hora certa !!!!!!!!!!!!!!! tem q mudar pra multithead
 //ou sempre pegar o lock, se para daria pra controlar melhor
-void addMsg(Fila fila, Mensagem msg ){
+void addMsg(Fila *fila, Mensagem msg ){
 
     //get lock
-    if(fila.tamanho >= 15){
+    if(fila->tamanho >= 15){
         printf("fila cheia");
 
         //deixa lock
@@ -50,32 +50,44 @@ void addMsg(Fila fila, Mensagem msg ){
     }
 
    
-    fila.conteudo[fila.tamanho] = msg;
-    fila.tamanho ++;
+    fila->conteudo[fila->tamanho] = msg;
+    fila->tamanho ++;
     //deixa lock
     return;
 }
 
 //passar ponteiro
-Mensagem getMensagem(Fila fila){
+//Mensagem m = getMensagem(&minhafila);
+
+
+//errado, ta uma pilha
+Mensagem getMsg(Fila *fila){
 
     //get lock
-    if(fila.tamanho == 0){
+    if(fila->tamanho == 0){
         //lost lock
-        return;
+        Mensagem vazio = {0};
+        return vazio;
 
     }
 
-    fila.tamanho --;
+    fila->tamanho --;
 
-    Mensagem retorno = fila.conteudo[fila.tamanho];
+    Mensagem retorno = fila->conteudo[fila->tamanho];
     
     //tira da lista zera os bytes
-    memset(&fila.conteudo[fila.tamanho], 0, sizeof(Mensagem));
+    memset(&fila->conteudo[fila->tamanho], 0, sizeof(Mensagem));
 
     return retorno;
     
 
+}
+
+
+void printFila(Fila fila){
+    for(int i =0; i<fila.tamanho;i++){
+        printf("Mensagem na posicao %d: %s \n", i, fila.conteudo[i].conteudo);
+    }
 }
 
 
@@ -84,7 +96,26 @@ Mensagem getMensagem(Fila fila){
 //terminal é a main
 int main(){
 
+    Fila minhafila = criarFila();
+
+    Mensagem msg1;
+    Mensagem msg2;
+    Mensagem msg3;
+    
+    strcpy(msg1.conteudo, "um");
+    strcpy(msg2.conteudo, "dos");
+    strcpy(msg3.conteudo, "tres");
+
+    addMsg(&minhafila, msg1);
+    addMsg(&minhafila, msg2);
+    addMsg(&minhafila, msg1);
+
+
+    printFila(minhafila);
+
+    Mensagem tirar = getMsg(&minhafila);
     //testar coisas da lista 
 
-    
+     printFila(minhafila);
+     //ta errado!!!
 }
