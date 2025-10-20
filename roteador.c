@@ -1,9 +1,12 @@
 #include <stdio.h>
 #include <string.h>
-
+#include <pthread.h>
+#include <semaphore.h>
 
 #define Controle 0
 #define Dado 1
+
+#define tamanhoMaximoFila 15
 
 typedef struct{
     int tipo;//tipo de msg
@@ -17,7 +20,7 @@ typedef struct{
 typedef struct{
 
     int tamanho;
-    Mensagem conteudo[15];
+    Mensagem conteudo[tamanhoMaximoFila];
 
 } Fila;
 
@@ -42,7 +45,7 @@ Fila criarFila(){
 void addMsg(Fila *fila, Mensagem msg ){
 
     //get lock
-    if(fila->tamanho >= 15){
+    if(fila->tamanho >= tamanhoMaximoFila){
         printf("fila cheia");
 
         //deixa lock
@@ -96,6 +99,12 @@ void printFila(Fila fila){
 
 
 //Mensagem minhaMensagem;
+
+
+//inicia global para todas as thead?
+sem_t semaforoEntrada;
+sem_t semaforoSaida;
+
 
 //terminal é a main
 int main(){
