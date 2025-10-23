@@ -8,6 +8,7 @@
 
 #define tamanhoMaximoFila 15
 
+
 typedef struct{
     int tipo;//tipo de msg
     int origem;//quem enviou
@@ -22,69 +23,107 @@ typedef struct{
     int tamanho;
     Mensagem conteudo[tamanhoMaximoFila];
 
+  
+    pthread_mutex_t lock; //protege o acesso a fila
+    sem_t cheio;  //fica olhando pra n ficar executando
+
 } Fila;
 
 
-Fila criarFila(){
+//filas globais
 
-    Fila minhafila;
+Fila filaEntrada;
+Fila filaSaida;
 
-    minhafila.tamanho = 0;
 
-    //zera os bytes
-    memset(minhafila.conteudo, 0, sizeof(minhafila.conteudo));
-   
-    
-    return minhafila;
+void initFilas() {
+
+    // filaEntrada
+    filaEntrada.tamanho = 0;
+    memset(filaEntrada.conteudo, 0, sizeof(filaEntrada.conteudo));
+    pthread_mutex_init(&filaEntrada.lock, NULL);
+    sem_init(&filaEntrada.cheio, 0, 0);
+
+
+    // filaSaida
+    filaSaida.tamanho = 0;
+    memset(filaSaida.conteudo, 0, sizeof(filaSaida.conteudo));
+    pthread_mutex_init(&filaSaida.lock, NULL);
+    sem_init(&filaSaida.cheio, 0, 0);
 
 }
+
 
 //passar como ponteiro
 //passar o semaforo para bloquear na hora certa !!!!!!!!!!!!!!! tem q mudar pra multithead
 //ou sempre pegar o lock, se para daria pra controlar melhor
-void addMsg(Fila *fila, Mensagem msg ){
+void addMsg(Mensagem msg ){
 
-    //get lock
-    if(fila->tamanho >= tamanhoMaximoFila){
+    pthread_mutex_lock(&filaEntrada.lock);
+    
+
+    //testa se a fila ta cheioa
+    if(filaEntrada.tamanho >= tamanhoMaximoFila){
         printf("fila cheia");
 
-        //deixa lock
+        pthread_mutex_unlock(&filaEntrada.lock);
         return;
     }
 
-   
-    fila->conteudo[fila->tamanho] = msg;
-    fila->tamanho ++;
-    //deixa lock
+   //muda  as var da fila
+    filaEntrada.conteudo[filaEntrada.tamanho] = msg;
+    filaEntrada.tamanho ++;
+
+    //libera po lock e add o semafaro
+    sem_post(&filaEntrada.cheio);
+    pthread_mutex_unlock(&filaEntrada.lock);
+    
     return;
 }
 
-//passar ponteiro
+
+
+//passa o global, pega o topo da fila
 //Mensagem m = getMensagem(&minhafila);
-Mensagem getMsg(Fila *fila){
+Mensagem getMsg(){
+    
+    //msg de erro
+    Mensagem vazio = {0};
+
+    //tenta pegar o lock
+    pthread_mutex_lock(&filaEntrada.lock);
+
 
     //get lock
-    if(fila->tamanho == 0){
-        //lost lock
-        Mensagem vazio = {0};
+    if(filaEntrada.tamanho == 0){
+
+        pthread_mutex_unlock(&filaEntrada.lock);
         return vazio;
 
     }
 
-  
+    //passou os testes, pega a mensagem
 
-    Mensagem retorno = fila->conteudo[0];
+    Mensagem retorno = filaEntrada.conteudo[0];
     
     //tira da lista zera os bytes
-    memset(&fila->conteudo[0], 0, sizeof(Mensagem));
+    memset(&filaEntrada.conteudo[0], 0, sizeof(Mensagem));
 
     //faz voltar 1 pos
-    for(int i = 1; i<fila->tamanho;i++){
-        fila->conteudo[i-1] = fila->conteudo[i];
+    for(int i = 1; i<filaEntrada.tamanho;i++){
+        filaEntrada.conteudo[i-1] = filaEntrada.conteudo[i];
     }
 
-    fila->tamanho --;
-    //deixar lock
+    //diminui o tamanho
+    filaEntrada.tamanho --;
+
+    //libera o lock e tira do semafaro, semafaro tem q ter coisa
+
+    //o semaforo só muda na thead
+    //sem_wait(&filaEntrada.cheio);
+
+    pthread_mutex_unlock(&filaEntrada.lock);
+
     return retorno;
     
 
@@ -92,24 +131,52 @@ Mensagem getMsg(Fila *fila){
 
 
 void printFila(Fila fila){
+
+    //se der pau botar o lock
+    pthread_mutex_lock(&fila.lock);
     for(int i =0; i<fila.tamanho;i++){
         printf("Mensagem na posicao %d: %s \n", i, fila.conteudo[i].conteudo);
     }
+    pthread_mutex_unlock(&fila.lock);
 }
 
 
-//Mensagem minhaMensagem;
 
+void *theadFilaEntrada() {
 
-//inicia global para todas as thead?
-sem_t semaforoEntrada;
-sem_t semaforoSaida;
+    printFila(filaEntrada);
+
+    while (1){
+        //tem coisa entao vai dar o get, new ´é a mensagem que chegou agora tem q tratar
+        sem_wait(&filaEntrada.cheio);
+        Mensagem newMensagem = getMsg();
+
+        //descobrir como fazer isso funcionar, olhar no tranbalho, n to entendendo como ele pega o id dele
+        //if (newMensagem.destino == )
+
+    }
+    return NULL;
+}
+
+void *theadFSaida() {
+
+     while (1){
+        //trhead ligada
+    }
+    return NULL;
+}
+
 
 
 //terminal é a main
 int main(){
 
-    Fila minhafila = criarFila();
+    initFilas();
+
+    pthread_t tEntrada, tSaida;
+
+  
+    
 
     Mensagem msg1;
     Mensagem msg2;
@@ -119,18 +186,22 @@ int main(){
     strcpy(msg2.conteudo, "dos");
     strcpy(msg3.conteudo, "tres");
 
-    addMsg(&minhafila, msg1);
-    addMsg(&minhafila, msg2);
-    addMsg(&minhafila, msg3);
-     addMsg(&minhafila, msg3);
+    addMsg(msg1);
+    addMsg(msg2);
+    addMsg(msg3);
 
 
-    printFila(minhafila);
+    pthread_create(&tEntrada, NULL, theadFilaEntrada, NULL);
+    pthread_create(&tSaida, NULL, theadFSaida, NULL);
 
-    Mensagem tirar = getMsg(&minhafila);
-    tirar = getMsg(&minhafila);
-    //testar coisas da lista 
 
-     printFila(minhafila);
+    while (1)
+    {
+        /* code */
+    }
+    
+
+   
+
     
 }
