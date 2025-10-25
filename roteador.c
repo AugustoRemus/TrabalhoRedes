@@ -1,3 +1,5 @@
+
+
 #include <stdio.h>
 #include <string.h>
 #include <pthread.h>
@@ -34,7 +36,7 @@ typedef struct{
 
 Fila filaEntrada;
 Fila filaSaida;
-
+int id= 1;  //mudar vai receber do arquivo, ai abre outroa rquivo para pegar seu ip
 
 void initFilas() {
 
@@ -129,6 +131,14 @@ Mensagem getMsg(){
 
 }
 
+void printMsg(Mensagem msg){
+
+    printf("printando Mensagem:\n");
+    printf("Origem: %d\nDestino: %d\nTipo: %d\nConteudo: %s",msg.origem, msg.destino, msg.tipo,msg.conteudo);
+
+
+}
+
 
 void printFila(Fila fila){
 
@@ -142,6 +152,57 @@ void printFila(Fila fila){
 
 
 
+Mensagem criarMsg(){
+
+    Mensagem newMsg;
+    newMsg.destino = id;
+    
+
+
+    int escolha;
+
+    while(1){
+        printf("Digite o Destino da Mensagem: \n");
+
+        //faz um teste para ver se leu um valor inteiro, caso contrario usuario foi burro
+        if (scanf("%d", &escolha) != 1) {
+            printf("Entrada inválida!\n");
+            //limpa o buffer do scanf
+            while (getchar() != '\n');
+            continue;
+        }
+        if(escolha == id){
+            printf("Destino igual a origem, escolha novamente\n"); 
+            //limpa o buffer do scanf
+            while (getchar() != '\n');
+            continue;
+        }
+
+        newMsg.destino = escolha;
+        while (getchar() != '\n'); //limpa o ENTER que sobra do scanf
+        break;
+    }
+
+     printf("Digite o conteúdo da mensagem: ");
+    fgets(newMsg.conteudo, sizeof(newMsg.conteudo), stdin);
+
+    //tira o '\n' que o fgets pode deixar no final
+    newMsg.conteudo[strcspn(newMsg.conteudo, "\n")] = '\0';
+
+    return newMsg;
+}
+
+
+
+
+
+
+
+
+
+
+
+//theads ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 void *theadFilaEntrada() {
 
     printFila(filaEntrada);
@@ -150,6 +211,8 @@ void *theadFilaEntrada() {
         //tem coisa entao vai dar o get, new ´é a mensagem que chegou agora tem q tratar
         sem_wait(&filaEntrada.cheio);
         Mensagem newMensagem = getMsg();
+        printMsg(newMensagem);
+        //só ta pegando pra tirar a msg
 
         //descobrir como fazer isso funcionar, olhar no tranbalho, n to entendendo como ele pega o id dele
         //if (newMensagem.destino == )
@@ -176,8 +239,8 @@ int main(){
     pthread_t tEntrada, tSaida;
 
   
-    
-
+    /*  
+    //ta criando o resto com lixo ai printa cagado se n for completa
     Mensagem msg1;
     Mensagem msg2;
     Mensagem msg3;
@@ -189,19 +252,70 @@ int main(){
     addMsg(msg1);
     addMsg(msg2);
     addMsg(msg3);
-
+    */
 
     pthread_create(&tEntrada, NULL, theadFilaEntrada, NULL);
     pthread_create(&tSaida, NULL, theadFSaida, NULL);
 
+    //menu, esse id vai mudar ta aqui só pra n dar bug, ele é o global e vai passar d parametro
+    //quando inicia o arquivo
+    int id = 1;
+    int escolha;
 
     while (1)
     {
-        /* code */
-    }
+        printf("\n===============================\n");
+        printf(" Bem-vindo à interface do roteador: %d\n", id);
+        printf("===============================\n");
+        printf("1 - Ver status da conexão\n");
+        printf("2 - Enviar Mensagem\n");
+        printf("3 - ESCOLHA3\n");
+        printf("4 - ESCOLHA4\n");
+        printf("0 - Sair\n");
+        printf("-------------------------------\n");
+        printf("Digite o numero da opção desejada: ");
+        
+
+        //faz um teste para ver se leu um valor inteiro, caso contrario usuario foi burro
+        if (scanf("%d", &escolha) != 1) {
+            printf("Entrada inválida!\n");
+            //limpa o buffer do scanf
+            while (getchar() != '\n');
+            continue;
+        }
+        printf("-------------------------------\n");
+        switch (escolha)
+        {
+            case 1:
+                printf("Status: Conectado e estável.\n");
+                break;
+            case 2:
+                printf("Enviando Mensagem\n");
+
+                Mensagem novaMensagem = criarMsg();
+
+                //enviar socket novamensegem.destino
+
+                print("Mensagem enviada com Sucesso");
+                
+                break;
+            case 3:
+                printf(".\n");
+                break;
+            case 4:
+                printf(".\n");
+                break;
+            case 0:
+                printf("Saindo...\n");
+                return 0;
+            default:
+                printf("Opção inválida! Tente novamente.\n");
+                break;
+
+            }
     
-
-   
-
+        }
+    
+    
     
 }
