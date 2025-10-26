@@ -83,9 +83,37 @@ void addMsg(Mensagem msg ){
     return;
 }
 
+//passar como ponteiro
+//passar o semaforo para bloquear na hora certa !!!!!!!!!!!!!!! tem q mudar pra multithead
+//ou sempre pegar o lock, se para daria pra controlar melhor
+void encaminharMsg(Mensagem msg ){
+
+    pthread_mutex_lock(&filaSaida.lock);
+    
+
+    //testa se a fila ta cheioa
+    if(filaSaida.tamanho >= tamanhoMaximoFila){
+        printf("fila cheia");
+
+        pthread_mutex_unlock(&filaSaida.lock);
+        return;
+    }
+
+   //muda  as var da fila
+    filaSaida.conteudo[filaSaida.tamanho] = msg;
+    filaSaida.tamanho ++;
+
+    //libera po lock e add o semafaro
+    sem_post(&filaSaida.cheio);
+    pthread_mutex_unlock(&filaSaida.lock);
+    
+    return;
+}
 
 
-//passa o global, pega o topo da fila
+
+
+//passa o global, pega o topo da fila, quando adiciona só taca no topo
 //Mensagem m = getMensagem(&minhafila);
 Mensagem getMsg(){
     
@@ -133,11 +161,31 @@ Mensagem getMsg(){
 
 void printMsg(Mensagem msg){
 
+      char *tipo;
+    if (msg.tipo == Controle){
+        tipo = "Controle";
+    }
+    else{
+        tipo = "dado";
+    }
+
     printf("printando Mensagem:\n");
-    printf("Origem: %d\nDestino: %d\nTipo: %d\nConteudo: %s",msg.origem, msg.destino, msg.tipo,msg.conteudo);
+    printf("Origem: %d\nDestino: %d\nTipo: %d\nConteudo: %s",msg.origem, msg.destino,tipo,msg.conteudo);
 
 
 }
+
+
+//pra imprimir msg d texto
+void printMsgFormatada(Mensagem msg){
+
+    printf("Nova Mensagem do roteador: %d :\n", msg.origem);
+    printf("%s",msg.conteudo);
+
+
+}
+
+
 
 
 void printFila(Fila fila){
@@ -177,18 +225,34 @@ Mensagem criarMsg(){
             while (getchar() != '\n');
             continue;
         }
+       
 
         newMsg.destino = escolha;
         while (getchar() != '\n'); //limpa o ENTER que sobra do scanf
         break;
     }
 
-     printf("Digite o conteúdo da mensagem: ");
-    fgets(newMsg.conteudo, sizeof(newMsg.conteudo), stdin);
+    printf("Digite o conteúdo da mensagem: \n");
+    while(1){
 
-    //tira o '\n' que o fgets pode deixar no final
-    newMsg.conteudo[strcspn(newMsg.conteudo, "\n")] = '\0';
+        //pega a msg e salva
+        fgets(newMsg.conteudo, sizeof(newMsg.conteudo), stdin);
 
+        //tira o '\n' que o fgets pode deixar no final
+        newMsg.conteudo[strcspn(newMsg.conteudo, "\n")] = '\0';
+
+        //se for maior q 100 manda fazer dnv
+        if(strlen(newMsg.conteudo) > 100){
+
+            printf("Mensagem muito grande, tente novamente\n");
+            while (getchar() != '\n');
+            continue;
+        }
+
+        break;
+    }    
+
+    newMsg.tipo = Dado;
     return newMsg;
 }
 
@@ -210,8 +274,32 @@ void *theadFilaEntrada() {
     while (1){
         //tem coisa entao vai dar o get, new ´é a mensagem que chegou agora tem q tratar
         sem_wait(&filaEntrada.cheio);
+
         Mensagem newMensagem = getMsg();
-        printMsg(newMensagem);
+
+
+        //msg pra printar pta mim
+        if(newMensagem.tipo == Dado && newMensagem.destino == id){
+            printMsgFormatada(newMensagem);
+        }
+
+        //ou é  de controle pra mim ou é pra outra pessoa
+        else{
+            //n é pra mim a msg
+            if(newMensagem.destino != id){
+                encaminharMsg(newMensagem);
+            }
+
+
+            //realizar calculo vetor distancia
+
+           
+            
+
+
+
+        }
+        //printMsg(newMensagem);
         //só ta pegando pra tirar a msg
 
         //descobrir como fazer isso funcionar, olhar no tranbalho, n to entendendo como ele pega o id dele
@@ -221,6 +309,8 @@ void *theadFilaEntrada() {
     return NULL;
 }
 
+
+//aqui vai mandar as trheadas
 void *theadFSaida() {
 
      while (1){
@@ -294,11 +384,24 @@ int main(){
 
                 Mensagem novaMensagem = criarMsg();
 
-                //enviar socket novamensegem.destino
+                encaminharMsg(novaMensagem);
 
-                print("Mensagem enviada com Sucesso");
+                char *tipo;
+                if (novaMensagem.tipo == Controle){
+                    tipo = "Controle";
+                }
+                else{
+                    tipo = "dado";
+                }
+
+                printf("Mensagem enviada do roteador: %d do tipo %s com destino: %d\n", id,tipo,novaMensagem.destino);
+                
+
+                printMsg(novaMensagem);
                 
                 break;
+
+
             case 3:
                 printf(".\n");
                 break;
