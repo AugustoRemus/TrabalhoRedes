@@ -1,12 +1,12 @@
-
-
 #include <stdio.h>
 #include <string.h>
 #include <pthread.h>
 #include <semaphore.h>
 
+#define CONFIG_FILE "roteador.config"
 #define Controle 0
 #define Dado 1
+
 
 #define tamanhoMaximoFila 15
 
@@ -36,7 +36,8 @@ typedef struct{
 
 Fila filaEntrada;
 Fila filaSaida;
-int id= 1;  //mudar vai receber do arquivo, ai abre outroa rquivo para pegar seu ip
+int id;  //mudar vai receber do arquivo, ai abre outroa rquivo para pegar seu ip
+int meuSocket;
 
 void initFilas() {
 
@@ -258,9 +259,31 @@ Mensagem criarMsg(){
 
 
 
+int pegaSocket(const char *filename) {
+
+    FILE *f = fopen(filename, "r");
+    if (!f) {
+        printf("deu pao, n abriu o arquivo %s\n", filename);
+        return -1;
+    }
+
+    int tempId, port;
+    char ip[64];
+
+    // olha cada linha no formato "id port ip", o 63 é para pegar o ip, mas vai ignorar se n for local
+    while (fscanf(f, "%d %d %63s", &tempId, &port, ip) == 3) {
+        if (tempId == id) {
+            fclose(f);
+            return port; //achou a porta
+        }
+    }
 
 
 
+
+    fclose(f);
+    return -1; // não achou o id
+}
 
 
 
@@ -293,10 +316,7 @@ void *theadFilaEntrada() {
 
             //realizar calculo vetor distancia
 
-           
-            
-
-
+        
 
         }
         //printMsg(newMensagem);
@@ -322,42 +342,37 @@ void *theadFSaida() {
 
 
 //terminal é a main
-int main(){
+int main(int argc, char *argv[])
+{
+
+    id = atoi(argv[1]); //converte o argumento para inteiro, isso   q faz ter q passar argumento
+    //tem q passar certo se n da pau
+
+    meuSocket = pegaSocket("roteador.config");
+
+    printf("socket: %d", meuSocket);
 
     initFilas();
 
     pthread_t tEntrada, tSaida;
 
-  
-    /*  
-    //ta criando o resto com lixo ai printa cagado se n for completa
-    Mensagem msg1;
-    Mensagem msg2;
-    Mensagem msg3;
-    
-    strcpy(msg1.conteudo, "um");
-    strcpy(msg2.conteudo, "dos");
-    strcpy(msg3.conteudo, "tres");
 
-    addMsg(msg1);
-    addMsg(msg2);
-    addMsg(msg3);
-    */
+
 
     pthread_create(&tEntrada, NULL, theadFilaEntrada, NULL);
     pthread_create(&tSaida, NULL, theadFSaida, NULL);
 
     //menu, esse id vai mudar ta aqui só pra n dar bug, ele é o global e vai passar d parametro
     //quando inicia o arquivo
-    int id = 1;
+    //int id = 1;
     int escolha;
 
     while (1)
     {
         printf("\n===============================\n");
-        printf(" Bem-vindo à interface do roteador: %d\n", id);
+        printf(" Bem-vindo a interface do roteador: %d\n", id);
         printf("===============================\n");
-        printf("1 - Ver status da conexão\n");
+        printf("1 - Ver status da conexao\n");
         printf("2 - Enviar Mensagem\n");
         printf("3 - ESCOLHA3\n");
         printf("4 - ESCOLHA4\n");
