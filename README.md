@@ -3,8 +3,13 @@ Trabalho de Redes
 
 
 para rodar:
-"roteador.c" é o nome do arquivo
+"roteador.c" é o nome do arquivo 
+
+
+"
 gcc roteador.c -o roteador
+
+"
 dps 
 
 ./roteador 5
