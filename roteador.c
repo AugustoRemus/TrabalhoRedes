@@ -7,6 +7,8 @@
 #define Controle 0
 #define Dado 1
 
+#define numRoteadores 4
+
 
 #define tamanhoMaximoFila 15
 
@@ -31,6 +33,24 @@ typedef struct{
 
 } Fila;
 
+typedef struct 
+{
+    int destino;
+    int saida;
+    int custo;
+
+} Distancia;
+
+typedef struct 
+{
+    //todos os vetores
+    Distancia vetores[numRoteadores];
+    pthread_mutex_t lock; //mutex
+
+    
+} VetoresDistancia;
+
+
 
 //filas globais
 
@@ -38,6 +58,7 @@ Fila filaEntrada;
 Fila filaSaida;
 int id;  //mudar vai receber do arquivo, ai abre outroa rquivo para pegar seu ip
 int meuSocket;
+VetoresDistancia vetorDistancia;
 
 void initFilas() {
 
@@ -258,7 +279,7 @@ Mensagem criarMsg(){
 }
 
 
-
+//abr o arquivo e pega o scokt
 int pegaSocket(const char *filename) {
 
     FILE *f = fopen(filename, "r");
@@ -353,6 +374,39 @@ int main(int argc, char *argv[])
     printf("socket: %d", meuSocket);
 
     initFilas();
+
+    //criar vetores distancia, zera todos menos ele mesmo
+
+    pthread_mutex_lock(&vetorDistancia.lock);
+    
+    for(int i = 0; i< numRoteadores; i++){
+
+        //ajusta ele mesmo
+        if (i == id){
+            //custo zero
+            vetorDistancia.vetores[i].custo = 0;
+            //o desino é ele
+            vetorDistancia.vetores[i].destino = id;
+            //saida fodase pq vai só usar localmente
+            vetorDistancia.vetores[i].saida = -1;
+
+        }
+        else{
+
+            vetorDistancia.vetores[i].custo = -1;
+            vetorDistancia.vetores[i].destino = -1;
+            vetorDistancia.vetores[i].saida = -1;
+
+        }
+        
+    pthread_mutex_unlock(&vetorDistancia.lock);
+
+        
+
+
+    }
+
+
 
     pthread_t tEntrada, tSaida;
 
