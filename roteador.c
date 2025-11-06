@@ -38,6 +38,8 @@ typedef struct
     int destino;
     int saida;
     int custo;
+    int isVisinho;
+    int rodadasSemResposta;
 
 } Distancia;
 
@@ -49,6 +51,17 @@ typedef struct
 
     
 } VetoresDistancia;
+
+
+//quando chegar um novo vetor distancia armazena aqui para processar
+typedef struct 
+{
+    //vetores distancias recebidos mas n analizados
+    Distancia vetoresNaoAnalizados[numRoteadores];
+    pthread_mutex_t lock; //mutex
+
+    
+} AnalizarVetores;
 
 
 
@@ -361,6 +374,67 @@ void *theadFSaida() {
 }
 
 
+//cuida dos vetores distancias
+
+
+void *theadVetorDistancia(){
+
+    
+    //criar vetores distancia, zera todos menos ele mesmo
+
+    pthread_mutex_lock(&vetorDistancia.lock);
+   
+    
+    
+    for(int i = 0; i< numRoteadores; i++){
+
+        //ajusta ele mesmo
+        if (i == id){
+            //custo zero
+            vetorDistancia.vetores[i].custo = 0;
+            //o desino é ele
+            vetorDistancia.vetores[i].destino = id;
+            //saida fodase pq vai só usar localmente
+            vetorDistancia.vetores[i].saida = -1;
+            //é ele msm
+            vetorDistancia.vetores[i].isVisinho = 0;
+            //n importa
+            vetorDistancia.vetores[i].rodadasSemResposta = 0;
+        }
+        else{
+
+            vetorDistancia.vetores[i].custo = -1;
+            vetorDistancia.vetores[i].destino = -1;
+            vetorDistancia.vetores[i].saida = -1;
+            //mudar dependendo do arquivo
+            vetorDistancia.vetores[i].isVisinho = 0;
+           //cada vizinho q n mandar por rodadada adiciona um, se chegar 3 caiu o enlace
+            vetorDistancia.vetores[i].rodadasSemResposta = 0;
+
+        }
+    }
+    
+    //botei aqui esse }
+    
+    
+
+    //abrir o arquivo e marcar as coisas
+    
+        
+    pthread_mutex_unlock(&vetorDistancia.lock);
+
+    //loop principal deve ser ativado a cada alguns momentos para fazerr os calculos dos ençaces
+    while (1)
+    {
+        /* code */
+    }
+    
+    //estava aqui
+    //}
+    
+    
+}
+
 
 //terminal é a main
 int main(int argc, char *argv[])
@@ -375,36 +449,6 @@ int main(int argc, char *argv[])
 
     initFilas();
 
-    //criar vetores distancia, zera todos menos ele mesmo
-
-    pthread_mutex_lock(&vetorDistancia.lock);
-    
-    for(int i = 0; i< numRoteadores; i++){
-
-        //ajusta ele mesmo
-        if (i == id){
-            //custo zero
-            vetorDistancia.vetores[i].custo = 0;
-            //o desino é ele
-            vetorDistancia.vetores[i].destino = id;
-            //saida fodase pq vai só usar localmente
-            vetorDistancia.vetores[i].saida = -1;
-
-        }
-        else{
-
-            vetorDistancia.vetores[i].custo = -1;
-            vetorDistancia.vetores[i].destino = -1;
-            vetorDistancia.vetores[i].saida = -1;
-
-        }
-        
-    pthread_mutex_unlock(&vetorDistancia.lock);
-
-        
-
-
-    }
 
 
 
