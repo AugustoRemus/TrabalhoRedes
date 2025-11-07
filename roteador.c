@@ -4,6 +4,7 @@
 #include <semaphore.h>
 
 #define CONFIG_FILE "roteador.config"
+#define ENLACE_FILE "enlace.config"
 #define Controle 0
 #define Dado 1
 
@@ -35,10 +36,15 @@ typedef struct{
 
 typedef struct 
 {
+    //destino quer dizer qual roteador tem q ir e a saida é por onde vai passar a msg
     int destino;
     int saida;
+    //quanto custa até a saida
     int custo;
+
+    //se é vizinho
     int isVisinho;
+    //quanto tempo faz q n manda o vetor distancia
     int rodadasSemResposta;
 
 } Distancia;
@@ -57,7 +63,7 @@ typedef struct
 typedef struct 
 {
     //vetores distancias recebidos mas n analizados
-    Distancia vetoresNaoAnalizados[numRoteadores];
+    VetoresDistancia vetoresNaoAnalizados[numRoteadores];
     pthread_mutex_t lock; //mutex
 
     
@@ -320,13 +326,31 @@ int pegaSocket(const char *filename) {
 }
 
 
+//só chamar com o lock obtido
+void imprimirVetorDistancia(){
+
+      for(int i =0; i< numRoteadores;i++){
+        printf("\nRoteador %d que esta na pos %d do vetor:\n", i+1, i);
+        printf("vizinho : %d, custo: %d\n", vetorDistancia.vetores[i].isVisinho,vetorDistancia.vetores[i].custo );
+        printf("sainda: %d, tempo sem mandar o vetor: %d\n\n",vetorDistancia.vetores[i].saida, vetorDistancia.vetores[i].rodadasSemResposta);
+        /*
+        printf("Destino: %d, por onde vai a msg: %d\n",vetorDistancia.vetores[i].destino,vetorDistancia.vetores[i].saida);
+        printf("Custo: %d, é visinho: %d, rodadas sem responder: %d",vetorDistancia.vetores[i].custo,vetorDistancia.vetores[i].isVisinho,vetorDistancia.vetores[i].rodadasSemResposta);
+         */
+        
+    }
+
+}
+
+
 
 
 
 //theads ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 void *theadFilaEntrada() {
 
-    printFila(filaEntrada);
+    //printFila(filaEntrada);
+   
 
     while (1){
         //tem coisa entao vai dar o get, new ´é a mensagem que chegou agora tem q tratar
@@ -379,14 +403,15 @@ void *theadFSaida() {
 
 void *theadVetorDistancia(){
 
-    
-    //criar vetores distancia, zera todos menos ele mesmo
+    //pega o lock
 
     pthread_mutex_lock(&vetorDistancia.lock);
    
-    
+    //cria os vetores distancia e zera eles
     
     for(int i = 0; i< numRoteadores; i++){
+
+        //deixa em fila ou seja, o roteador 1 é o 0 e assim vai
 
         //ajusta ele mesmo
         if (i == id){
@@ -414,19 +439,63 @@ void *theadVetorDistancia(){
         }
     }
     
-    //botei aqui esse }
-    
-    
+    //botei aqui esse }s
 
-    //abrir o arquivo e marcar as coisas
-    
+    //abre o arquivo
+
+    FILE *f = fopen(ENLACE_FILE, "r");
+
+    if (!f) {
+        printf("Erro ao abrir o arquivo.\n");
+    }
+
+    //pra debuga
+    sleep(1);
+
+    int id1, id2, custo;
+    int vizinho;
+    while (fscanf(f, "%d %d %d", &id1, &id2, &custo) == 3) {
+
+        //ve se é com ele
+        if(id1 == id){
+            
+            vizinho = id2;
+        }
+        if (id2 == id){
+            vizinho = id1;
+        }
+
+        //se tiver ele faz isso
+        if(id == id1 || id == id2){
+
+        // -1 pq ele ta armazenado em 1 atras
+        vetorDistancia.vetores[vizinho - 1].custo = custo;
+        vetorDistancia.vetores[vizinho -1].isVisinho = 1;
+
+        //é para onde ele quer ir
+        vetorDistancia.vetores[vizinho-1 ].destino = vizinho;
+
+        //é o menor caminho até agora
+        vetorDistancia.vetores[vizinho-1].saida = vizinho;
+        
+        }
+        
+    }
+
+    imprimirVetorDistancia();
+
+    fclose(f);
+
+    //enviar vetores distancias e dar um sleep    
         
     pthread_mutex_unlock(&vetorDistancia.lock);
 
     //loop principal deve ser ativado a cada alguns momentos para fazerr os calculos dos ençaces
     while (1)
     {
-        /* code */
+        //pega o lock, faz os calculos para ver se tem uma distancia menor, se mudar manda e volta a dormir
+
+        //adiciona +1 para a demora de todos, os que mandarem zera, dps analiza os q fiaram com 3 no final mas so os viinhos
     }
     
     //estava aqui
@@ -452,13 +521,15 @@ int main(int argc, char *argv[])
 
 
 
-    pthread_t tEntrada, tSaida;
+    pthread_t tEntrada, tSaida, tVetorDistancia;
 
 
 
 
     pthread_create(&tEntrada, NULL, theadFilaEntrada, NULL);
     pthread_create(&tSaida, NULL, theadFSaida, NULL);
+    pthread_create(&tVetorDistancia, NULL, theadVetorDistancia, NULL);
+    
 
     //menu, esse id vai mudar ta aqui só pra n dar bug, ele é o global e vai passar d parametro
     //quando inicia o arquivo
