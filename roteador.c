@@ -53,21 +53,50 @@ typedef struct
 {
     //todos os vetores
     Distancia vetores[numRoteadores];
+    
     pthread_mutex_t lock; //mutex
 
     
 } VetoresDistancia;
 
 
+
+//este roteador só tem q saber isso
+typedef struct 
+{
+    //destino quer dizer qual roteador tem q ir e a saida é por onde vai passar a msg
+    int destino;
+   
+    //quanto custa até a saida
+    int custo;
+
+} DistanciaRecebido;
+
+
+
+// cada roteador vai mandar um destes para calcular o vetor distancia
+typedef struct 
+{
+    //todos as distancias de um roteador, como vai ser só analizado n tem q ter lock, o que junta todos vai ter
+    DistanciaRecebido vetores[numRoteadores];
+    
+} vetoresRecebidos;
+
+
 //quando chegar um novo vetor distancia armazena aqui para processar
 typedef struct 
 {
     //vetores distancias recebidos mas n analizados
-    VetoresDistancia vetoresNaoAnalizados[numRoteadores];
+    vetoresRecebidos vetoresNaoAnalizados[numRoteadores];
+    //vetor que controla se ja foi calculado, zero se deve ser analizado, 1 se ja foi
+    int testados[numRoteadores];
+
     pthread_mutex_t lock; //mutex
 
     
 } AnalizarVetores;
+
+
 
 
 
@@ -78,6 +107,8 @@ Fila filaSaida;
 int id;  //mudar vai receber do arquivo, ai abre outroa rquivo para pegar seu ip
 int meuSocket;
 VetoresDistancia vetorDistancia;
+AnalizarVetores vetoresParaAnalize;
+
 
 void initFilas() {
 
@@ -298,6 +329,8 @@ Mensagem criarMsg(){
 }
 
 
+
+
 //abr o arquivo e pega o scokt
 int pegaSocket(const char *filename) {
 
@@ -326,7 +359,42 @@ int pegaSocket(const char *filename) {
 }
 
 
-//só chamar com o lock obtido
+
+
+
+void zerarFilaTesta(){
+
+    //marca como todos analizados pois n veio nenhum ainda
+    pthread_mutex_lock(&vetoresParaAnalize.lock);
+
+    for (int i = 0; i < numRoteadores; i++)
+        vetoresParaAnalize.testados[i] = 1;
+
+    pthread_mutex_unlock(&vetoresParaAnalize.lock);
+
+}
+
+
+//vai botar o vetor para analizar, passa um vetor distancia, e o roteador q mandou
+void addVetorAnalize(int roteadorOrigem, vetoresRecebidos vetorAdicionar){
+
+    pthread_mutex_lock(&vetoresParaAnalize.lock);
+
+    //bota o no lugar do roteador q mandou
+    vetoresParaAnalize.vetoresNaoAnalizados[roteadorOrigem-1] = vetorAdicionar;
+
+    //marca como nao analizado
+    vetoresParaAnalize.testados[roteadorOrigem-1] = 0;
+
+    pthread_mutex_unlock(&vetoresParaAnalize.lock);
+
+
+}
+
+
+
+
+//só chamar com o lock obtido, só pra debug
 void imprimirVetorDistancia(){
 
       for(int i =0; i< numRoteadores;i++){
@@ -364,19 +432,24 @@ void *theadFilaEntrada() {
             printMsgFormatada(newMensagem);
         }
 
-        //ou é  de controle pra mim ou é pra outra pessoa
-        else{
-            //n é pra mim a msg
-            if(newMensagem.destino != id){
-                encaminharMsg(newMensagem);
-            }
+        if (newMensagem.tipo == Controle && newMensagem.destino == id){
 
+            //formatar a msg para passar nesse vetor
+            vetoresRecebidos newVetor;
 
-            //realizar calculo vetor distancia
+            //////////////////fazeeeeeeeeeeeeeeeeeeeeeeeeeeer
 
-        
+            addVetorAnalize(newMensagem.origem,newVetor);
 
         }
+    
+        if(newMensagem.destino != id){
+
+            //rencaminhar msg
+
+        }
+
+       
         //printMsg(newMensagem);
         //só ta pegando pra tirar a msg
 
@@ -402,6 +475,9 @@ void *theadFSaida() {
 
 
 void *theadVetorDistancia(){
+
+    //zera o vetor de entrada dos outros
+    zerarFilaTesta();
 
     //pega o lock
 
@@ -449,9 +525,7 @@ void *theadVetorDistancia(){
         printf("Erro ao abrir o arquivo.\n");
     }
 
-    //pra debuga
-    sleep(1);
-
+   
     int id1, id2, custo;
     int vizinho;
     while (fscanf(f, "%d %d %d", &id1, &id2, &custo) == 3) {
@@ -482,20 +556,94 @@ void *theadVetorDistancia(){
         
     }
 
-    imprimirVetorDistancia();
+    
 
     fclose(f);
 
     //enviar vetores distancias e dar um sleep    
-        
+    
+    sleep(1);
+
+    imprimirVetorDistancia();
+
     pthread_mutex_unlock(&vetorDistancia.lock);
 
     //loop principal deve ser ativado a cada alguns momentos para fazerr os calculos dos ençaces
     while (1)
     {
+
+        
         //pega o lock, faz os calculos para ver se tem uma distancia menor, se mudar manda e volta a dormir
 
         //adiciona +1 para a demora de todos, os que mandarem zera, dps analiza os q fiaram com 3 no final mas so os viinhos
+
+        //pega o lock do vetor distancia principal
+        pthread_mutex_lock(&vetorDistancia.lock);
+        //se mudar vira 1
+        int mudou = 0;
+
+        //add +1 em todos os tempo dos vizinhos
+        for(int i =0; i< numRoteadores;i++){
+            if(vetorDistancia.vetores[i].isVisinho == 1){
+                vetorDistancia.vetores[i].rodadasSemResposta ++;
+            }
+        }
+
+
+
+        //pega o lock do vetor dos que chegaram
+        pthread_mutex_lock(&vetoresParaAnalize.lock);
+        
+        //ve se ja foi testado
+        for (int i = 0; i < numRoteadores; i++) {
+
+            if (vetoresParaAnalize.testados[i] == 0) {
+
+                //percorre todos os destinos recebidos do roteador i
+                for (int d = 0; d < numRoteadores; d++) {
+
+                    int destino = vetoresParaAnalize.vetoresNaoAnalizados[i].vetores[d].destino;
+                    int custoRecebido = vetoresParaAnalize.vetoresNaoAnalizados[i].vetores[d].custo;
+
+                    //ignora entradas inválidas
+                    if (destino <= 0 || custoRecebido < 0)
+                        continue;
+
+                    //custo até o roteador que enviou, pra adicionar dps
+                    int custoAteVizinho = vetorDistancia.vetores[i].custo;
+
+                    //se o vizinho estiver inacessível, pula
+                    if (custoAteVizinho < 0)
+                        continue;
+
+                    //custo total até o destino via esse vizinho
+                    int novoCusto = custoAteVizinho + custoRecebido;
+
+                    //se o destino ainda não tem rota, ou achou uma melhor
+                    if (vetorDistancia.vetores[destino - 1].custo < 0 ||
+                        novoCusto < vetorDistancia.vetores[destino - 1].custo) {
+
+                        vetorDistancia.vetores[destino - 1].custo = novoCusto;
+                        vetorDistancia.vetores[destino - 1].saida = i + 1;
+                        mudou = 1;
+                    }
+                }
+
+                //marca como testado (já analisado)
+                vetoresParaAnalize.testados[i] = 1;
+            }
+        }
+
+        pthread_mutex_unlock(&vetoresParaAnalize.lock);
+        pthread_mutex_unlock(&vetorDistancia.lock);
+
+
+        if(mudou == 1){
+            //manda o vetor para os outros pra fila d saida
+        }
+
+        sleep(1);
+       
     }
     
     //estava aqui
