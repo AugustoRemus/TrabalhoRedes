@@ -465,7 +465,9 @@ void *theadFilaEntrada() {
 void *theadFSaida() {
 
      while (1){
-        //trhead ligada
+        sem_wait(&filaSaida.cheio);
+
+        //aqui vai mandar pro socket
     }
     return NULL;
 }
@@ -612,6 +614,9 @@ void *theadVetorDistancia(){
                     //custo até o roteador que enviou, pra adicionar dps
                     int custoAteVizinho = vetorDistancia.vetores[i].custo;
 
+                    //reinicia o tempo que n mando msg
+                    vetorDistancia.vetores[i].rodadasSemResposta = 0;
+
                     //se o vizinho estiver inacessível, pula
                     if (custoAteVizinho < 0)
                         continue;
@@ -632,6 +637,20 @@ void *theadVetorDistancia(){
                 //marca como testado (já analisado)
                 vetoresParaAnalize.testados[i] = 1;
             }
+        }
+
+        for(int i =0; i<numRoteadores; i++){
+
+            if(vetorDistancia.vetores[i].isVisinho == 1 && vetorDistancia.vetores[i].rodadasSemResposta == 3){
+                //caiu o enlace
+                vetorDistancia.vetores[i].isVisinho = 0;
+                vetorDistancia.vetores[i].custo = -1;
+                vetorDistancia.vetores[i].saida = -1;
+
+                //marca q mudou
+                mudou = 1;
+            }
+
         }
 
         pthread_mutex_unlock(&vetoresParaAnalize.lock);
