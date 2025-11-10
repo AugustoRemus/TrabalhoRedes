@@ -437,6 +437,27 @@ void *theadFilaEntrada() {
             //formatar a msg para passar nesse vetor
             vetoresRecebidos newVetor;
 
+            //vai receber o custo para todos em ordem
+            //cuida da string recebida da msg
+
+            char msg[] = newMensagem.conteudo;
+
+            //contador
+            int i = 0;
+
+            // quebra a string por espaços
+            char *token = strtok(msg, " ");
+
+            //olhar onde devo colocar 
+            while (token != NULL && i < numRoteadores) {
+                newVetor.vetores[i].custo = atoi(token);  // converte pra int
+                newVetor.vetores[i].destino = i + 1; //pq o roteador 1 fica na pos 0
+                i++;
+                token = strtok(NULL, " ");
+            }
+
+            
+
             //////////////////fazeeeeeeeeeeeeeeeeeeeeeeeeeeer
 
             addVetorAnalize(newMensagem.origem,newVetor);
