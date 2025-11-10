@@ -86,7 +86,7 @@ typedef struct
 //quando chegar um novo vetor distancia armazena aqui para processar
 typedef struct 
 {
-    //vetores distancias recebidos mas n analizados
+    //vetores distancias recebidos mas n analizados, vetor de vetores
     vetoresRecebidos vetoresNaoAnalizados[numRoteadores];
     //vetor que controla se ja foi calculado, zero se deve ser analizado, 1 se ja foi
     int testados[numRoteadores];
