@@ -681,27 +681,28 @@ void *theadVetorDistancia(){
             if (vetoresParaAnalize.testados[i] == 0) {
                 // percorre todos os destinos recebidos do roteador i
                 for (int d = 0; d < numRoteadores; d++) {
+                    
                     int destino = vetoresParaAnalize.vetoresNaoAnalizados[i].vetores[d].destino;
                     int custoRecebido = vetoresParaAnalize.vetoresNaoAnalizados[i].vetores[d].custo;
 
-                    // ignora entradas inválidas
+                    //ignora os errado
                     if (destino <= 0 || custoRecebido < 0)
                         continue;
 
-                    // custo até o roteador que enviou
+                    // custo ate o roteador que enviou (vai add no custo recebido)
                     int custoAteVizinho = vetorDistancia.vetores[i].custo;
 
-                    // reinicia o tempo que n mandou msg
+                    //reinicia o tempo que n mandou msg pq chegou nova
                     vetorDistancia.vetores[i].rodadasSemResposta = 0;
 
-                    // se o vizinho estiver inacessível, pula
+                    // se n der pra chegar (-1), pula
                     if (custoAteVizinho < 0)
                         continue;
 
-                    // custo total até o destino via esse vizinho
+                    //custo total ate o destino via esse vizinho
                     int novoCusto = custoAteVizinho + custoRecebido;
 
-                    // se o destino ainda não tem rota, ou achou uma melhor
+                    //se o destino ainda n tem rota, ou achou uma melhor
                     if (vetorDistancia.vetores[destino - 1].custo < 0 ||
                         novoCusto < vetorDistancia.vetores[destino - 1].custo) {
 
@@ -720,9 +721,14 @@ void *theadVetorDistancia(){
         for (int i = 0; i < numRoteadores; i++) {
             if (vetorDistancia.vetores[i].isVisinho == 1 &&
                 vetorDistancia.vetores[i].rodadasSemResposta == 3) {
+
+                //tira como vizinho
                 vetorDistancia.vetores[i].isVisinho = 0;
+                //custo infinito
                 vetorDistancia.vetores[i].custo = -1;
+                //desmarca tira a saida
                 vetorDistancia.vetores[i].saida = -1;
+
                 mudou = 1;
 
                 if(debugando == 1){
