@@ -2,6 +2,7 @@
 #include <string.h>
 #include <pthread.h>
 #include <semaphore.h>
+#include <time.h>
 
 #define CONFIG_FILE "roteador.config"
 #define ENLACE_FILE "enlace.config"
@@ -456,14 +457,22 @@ void addVetorAnalize(int roteadorOrigem, vetoresRecebidos vetorAdicionar){
 //só chamar com o lock obtido, só pra debug
 void imprimirVetorDistancia(){
 
-      for(int i =0; i< numRoteadores;i++){
+    time_t agora;
+    struct tm *infoTempo;
+
+    time(&agora);                     //pega o tempo atual
+    infoTempo = localtime(&agora);    //converte para horário local
+
+    char buffer[80];
+    strftime(buffer, sizeof(buffer), "%H:%M:%S", infoTempo);  //formata como HH:MM:SS
+
+    printf("Hora atual: %s\n", buffer);
+
+    for(int i =0; i< numRoteadores;i++){
         printf("\nRoteador %d que esta na pos %d do vetor:\n", i+1, i);
         printf("vizinho : %d, custo: %d\n", vetorDistancia.vetores[i].isVisinho,vetorDistancia.vetores[i].custo );
         printf("saida: %d, tempo sem mandar o vetor: %d\n\n",vetorDistancia.vetores[i].saida, vetorDistancia.vetores[i].rodadasSemResposta);
-        /*
-        printf("Destino: %d, por onde vai a msg: %d\n",vetorDistancia.vetores[i].destino,vetorDistancia.vetores[i].saida);
-        printf("Custo: %d, é visinho: %d, rodadas sem responder: %d",vetorDistancia.vetores[i].custo,vetorDistancia.vetores[i].isVisinho,vetorDistancia.vetores[i].rodadasSemResposta);
-         */
+    
         
     }
 
@@ -632,16 +641,22 @@ void *theadVetorDistancia(){
     }
     fclose(f);
 
-    //enviar vetores distancias e dar um sleep
-    //primeiro sleep bem demorado para dar tempo de iniciar os outro roteadores
-    sleep(10);
-
+   
     if (debugando == 1) {
         imprimirVetorDistancia();
     }
 
     pthread_mutex_unlock(&vetorDistancia.lock);
 
+
+    //criou os primeiros vetores distancia, da um sleep longo para os outros roteadores abrirem
+    sleep(10);
+
+    if(debugando == 1){
+        printf("Iniciando o envio dos vetores distancia\n");
+    }
+
+   
     // loop principal
     while (1)
     {
