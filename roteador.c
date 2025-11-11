@@ -9,7 +9,7 @@
 #define Dado 1
 
 //se estiver debugando == 1 se n qualquer outra coisa
-#define debugando 0
+#define debugando 1
 
 #define numRoteadores 4
 
@@ -37,10 +37,11 @@ typedef struct{
 
 } Fila;
 
+
+// vai ser guardado na orde, se quer ir para o roteador 3 acessa  VetorDistancia[2]
 typedef struct 
 {
-    //destino quer dizer qual roteador tem q ir e a saida é por onde vai passar a msg
-    int destino;
+    // pra qual roteador vai sair
     int saida;
     //quanto custa até a saida
     int custo;
@@ -386,6 +387,8 @@ Mensagem criarMsgDados(){
 //abr o arquivo e pega o scokt
 int pegaSocket(const char *filename, int idProcurar) {
 
+    //printf("chegou o numero : %d\n", idProcurar);
+
     FILE *f = fopen(filename, "r");
     if (!f) {
         printf("deu pao, n abriu o arquivo %s\n", filename);
@@ -399,6 +402,10 @@ int pegaSocket(const char *filename, int idProcurar) {
     while (fscanf(f, "%d %d %63s", &tempId, &port, ip) == 3) {
         if (tempId == idProcurar) {
             fclose(f);
+
+
+            printf("retornando %d para o id: %d\n", port,idProcurar);
+
             return port; //achou a porta
         }
     }
@@ -452,7 +459,7 @@ void imprimirVetorDistancia(){
       for(int i =0; i< numRoteadores;i++){
         printf("\nRoteador %d que esta na pos %d do vetor:\n", i+1, i);
         printf("vizinho : %d, custo: %d\n", vetorDistancia.vetores[i].isVisinho,vetorDistancia.vetores[i].custo );
-        printf("sainda: %d, tempo sem mandar o vetor: %d\n\n",vetorDistancia.vetores[i].saida, vetorDistancia.vetores[i].rodadasSemResposta);
+        printf("saida: %d, tempo sem mandar o vetor: %d\n\n",vetorDistancia.vetores[i].saida, vetorDistancia.vetores[i].rodadasSemResposta);
         /*
         printf("Destino: %d, por onde vai a msg: %d\n",vetorDistancia.vetores[i].destino,vetorDistancia.vetores[i].saida);
         printf("Custo: %d, é visinho: %d, rodadas sem responder: %d",vetorDistancia.vetores[i].custo,vetorDistancia.vetores[i].isVisinho,vetorDistancia.vetores[i].rodadasSemResposta);
@@ -554,9 +561,16 @@ void *theadFSaida() {
             printf("capitei uma msg para mim");
         }
         
+        
+      
+        //pega a saida do vetor (-1 pq no vetor ta 1 antes)
+        int saida = vetorDistancia.vetores[newMsg.destino - 1].saida;
+        printf("a porra da saida agora esta com o valor: %d\n", saida);
+       
+        imprimirVetorDistancia();
 
-
-        int numSocketEnviar = pegaSocket("roteador.config", newMsg.destino);
+        //pega o socket da saida
+        int numSocketEnviar = pegaSocket("roteador.config", saida);
         printf("numSocketEnviar: %d", numSocketEnviar );
 
 
@@ -569,161 +583,110 @@ void *theadFSaida() {
 }
 
 
-//cuida dos vetores distancias
-
-
+// cuida dos vetores distancias
 void *theadVetorDistancia(){
 
     //zera o vetor de entrada dos outros
     zerarFilaTesta();
 
     //pega o lock
-
     pthread_mutex_lock(&vetorDistancia.lock);
    
     //cria os vetores distancia e zera eles
-    
     for(int i = 0; i< numRoteadores; i++){
-
-        //deixa em fila ou seja, o roteador 1 é o 0 e assim vai
-
         //ajusta ele mesmo
         if (i == id){
             //custo zero
             vetorDistancia.vetores[i].custo = 0;
-            //o desino é ele
-            vetorDistancia.vetores[i].destino = id;
-            //saida fodase pq vai só usar localmente
             vetorDistancia.vetores[i].saida = -1;
-            //é ele msm
             vetorDistancia.vetores[i].isVisinho = 0;
-            //n importa
             vetorDistancia.vetores[i].rodadasSemResposta = 0;
         }
         else{
-
             vetorDistancia.vetores[i].custo = -1;
-            vetorDistancia.vetores[i].destino = -1;
             vetorDistancia.vetores[i].saida = -1;
-            //mudar dependendo do arquivo
             vetorDistancia.vetores[i].isVisinho = 0;
-           //cada vizinho q n mandar por rodadada adiciona um, se chegar 3 caiu o enlace
             vetorDistancia.vetores[i].rodadasSemResposta = 0;
-
         }
     }
-    
-    //botei aqui esse }s
 
     //abre o arquivo
-
     FILE *f = fopen(ENLACE_FILE, "r");
-
     if (!f) {
         printf("Erro ao abrir o arquivo.\n");
     }
 
-   
     int id1, id2, custo;
     int vizinho;
     while (fscanf(f, "%d %d %d", &id1, &id2, &custo) == 3) {
-
         //ve se é com ele
-        if(id1 == id){
-            
-            vizinho = id2;
-        }
-        if (id2 == id){
-            vizinho = id1;
-        }
+        if (id1 == id) vizinho = id2;
+        if (id2 == id) vizinho = id1;
 
         //se tiver ele faz isso
-        if(id == id1 || id == id2){
-
-        // -1 pq ele ta armazenado em 1 atras
-        vetorDistancia.vetores[vizinho - 1].custo = custo;
-        vetorDistancia.vetores[vizinho -1].isVisinho = 1;
-
-        //é para onde ele quer ir
-        vetorDistancia.vetores[vizinho-1 ].destino = vizinho;
-
-        //é o menor caminho até agora
-        vetorDistancia.vetores[vizinho-1].saida = vizinho;
-        
+        if (id == id1 || id == id2) {
+            vetorDistancia.vetores[vizinho - 1].custo = custo;
+            vetorDistancia.vetores[vizinho - 1].isVisinho = 1;
+            vetorDistancia.vetores[vizinho - 1].saida = vizinho;
         }
-        
     }
-
-    
-
     fclose(f);
 
-    //enviar vetores distancias e dar um sleep    
-    
-    sleep(1);
+    //enviar vetores distancias e dar um sleep
+    //primeiro sleep bem demorado para dar tempo de iniciar os outro roteadores
+    sleep(10);
 
-    if(debugando == 1){
+    if (debugando == 1) {
         imprimirVetorDistancia();
     }
-   
 
     pthread_mutex_unlock(&vetorDistancia.lock);
 
-    //loop principal deve ser ativado a cada alguns momentos para fazerr os calculos dos ençaces
+    // loop principal
     while (1)
     {
-
-        
-        //pega o lock, faz os calculos para ver se tem uma distancia menor, se mudar manda e volta a dormir
-
-        //adiciona +1 para a demora de todos, os que mandarem zera, dps analiza os q fiaram com 3 no final mas so os viinhos
-
-        //pega o lock do vetor distancia principal
         pthread_mutex_lock(&vetorDistancia.lock);
-        //se mudar vira 1
+
         int mudou = 0;
 
-        //add +1 em todos os tempo dos vizinhos
-        for(int i =0; i< numRoteadores;i++){
-            if(vetorDistancia.vetores[i].isVisinho == 1){
-                vetorDistancia.vetores[i].rodadasSemResposta ++;
+        // add +1 em todos os tempos dos vizinhos
+        for (int i = 0; i < numRoteadores; i++) {
+            if (vetorDistancia.vetores[i].isVisinho == 1) {
+
+         
+                vetorDistancia.vetores[i].rodadasSemResposta++;
             }
         }
 
-
-
-        //pega o lock do vetor dos que chegaram
+        // pega o lock do vetor dos que chegaram
         pthread_mutex_lock(&vetoresParaAnalize.lock);
-        
-        //ve se ja foi testado
+
+        // ve se ja foi testado
         for (int i = 0; i < numRoteadores; i++) {
-
             if (vetoresParaAnalize.testados[i] == 0) {
-
-                //percorre todos os destinos recebidos do roteador i
+                // percorre todos os destinos recebidos do roteador i
                 for (int d = 0; d < numRoteadores; d++) {
-
                     int destino = vetoresParaAnalize.vetoresNaoAnalizados[i].vetores[d].destino;
                     int custoRecebido = vetoresParaAnalize.vetoresNaoAnalizados[i].vetores[d].custo;
 
-                    //ignora entradas inválidas
+                    // ignora entradas inválidas
                     if (destino <= 0 || custoRecebido < 0)
                         continue;
 
-                    //custo até o roteador que enviou, pra adicionar dps
+                    // custo até o roteador que enviou
                     int custoAteVizinho = vetorDistancia.vetores[i].custo;
 
-                    //reinicia o tempo que n mando msg
+                    // reinicia o tempo que n mandou msg
                     vetorDistancia.vetores[i].rodadasSemResposta = 0;
 
-                    //se o vizinho estiver inacessível, pula
+                    // se o vizinho estiver inacessível, pula
                     if (custoAteVizinho < 0)
                         continue;
 
-                    //custo total até o destino via esse vizinho
+                    // custo total até o destino via esse vizinho
                     int novoCusto = custoAteVizinho + custoRecebido;
 
-                    //se o destino ainda não tem rota, ou achou uma melhor
+                    // se o destino ainda não tem rota, ou achou uma melhor
                     if (vetorDistancia.vetores[destino - 1].custo < 0 ||
                         novoCusto < vetorDistancia.vetores[destino - 1].custo) {
 
@@ -733,76 +696,77 @@ void *theadVetorDistancia(){
                     }
                 }
 
-                //marca como testado (já analisado)
+                // marca como testado (já analisado)
                 vetoresParaAnalize.testados[i] = 1;
             }
         }
 
-        for(int i =0; i<numRoteadores; i++){
-
-            if(vetorDistancia.vetores[i].isVisinho == 1 && vetorDistancia.vetores[i].rodadasSemResposta == 3){
-                //caiu o enlace
+        //detecta enlaces caidos
+        for (int i = 0; i < numRoteadores; i++) {
+            if (vetorDistancia.vetores[i].isVisinho == 1 &&
+                vetorDistancia.vetores[i].rodadasSemResposta == 3) {
                 vetorDistancia.vetores[i].isVisinho = 0;
                 vetorDistancia.vetores[i].custo = -1;
                 vetorDistancia.vetores[i].saida = -1;
-
-                //marca q mudou
                 mudou = 1;
-            }
 
-        }
-
-        pthread_mutex_unlock(&vetoresParaAnalize.lock);
-        
-
-        //cria o txt q vai mandar na msg d controle
-        char stringControle[500] = "";
-        char temp[32];  //guarda o numero antes d botar
-
-        for (int aux = 0; aux < numRoteadores; aux++) {
-            //converte o custo em str e bota um espaço
-            snprintf(temp, sizeof(temp), "%d ", vetorDistancia.vetores[aux].custo);
-            strcat(stringControle, temp);
-        }
-        
-
-
-        if(mudou == 1){
-            //pra todos os roteadores
-            for(int roteadores = 0; roteadores<numRoteadores;roteadores++){
-                //se for vizinho
-                if(vetorDistancia.vetores[roteadores].isVisinho == 1){
-
-                    Mensagem novaMsgControle;
-                    novaMsgControle.origem = id;
-                    novaMsgControle.destino = roteadores;
-                    novaMsgControle.tipo = Controle;
-                    //vai botar no campo da nova msg e cortar o tamanho
-                    strncpy(novaMsgControle.conteudo, stringControle, sizeof(novaMsgControle.conteudo) - 1);
-                    //marca o ultimo char como fim do texto
-                    novaMsgControle.conteudo[sizeof(novaMsgControle.conteudo) - 1] = '\0';
-
-                    //bota na fila d saida
-                    sendMsg(novaMsgControle);
-
+                if(debugando == 1){
+                    printf("Enlace com o roteador %d caiu!\n", i+1);
                 }
 
             }
         }
 
+     
+        //reseta os 0
+        int anyZero = 0;
+        for (int x = 0; x < numRoteadores; ++x) {
+            if (vetoresParaAnalize.testados[x] == 0) { anyZero = 1; break; }
+        }
+        if (!anyZero) {
+            //reset todas para 0 apenas se nenhuma estiver com 0
+            for (int x = 0; x < numRoteadores; ++x)
+                vetoresParaAnalize.testados[x] = 0;
+        }
+    
+       
+
+        pthread_mutex_unlock(&vetoresParaAnalize.lock);
+
+        //cria o txt q vai mandar na msg de controle
+        char stringControle[500] = "";
+        char temp[32];
+
+        for (int aux = 0; aux < numRoteadores; aux++) {
+            snprintf(temp, sizeof(temp), "%d ", vetorDistancia.vetores[aux].custo);
+            strncat(stringControle, temp, sizeof(stringControle) - strlen(stringControle) - 1);
+        }
+
+        if (mudou == 1) {
+            // pra todos os roteadores
+            for (int roteadores = 0; roteadores < numRoteadores; roteadores++) {
+                //se for vizinho
+                if (vetorDistancia.vetores[roteadores].isVisinho == 1) {
+                    //cria a msg d controle e manda pra eles
+                    Mensagem novaMsgControle;
+                    novaMsgControle.origem = id;
+                    novaMsgControle.destino = roteadores + 1; 
+                    novaMsgControle.tipo = Controle;
+                    strncpy(novaMsgControle.conteudo, stringControle, sizeof(novaMsgControle.conteudo) - 1);
+                    novaMsgControle.conteudo[sizeof(novaMsgControle.conteudo) - 1] = '\0';
+
+                    sendMsg(novaMsgControle);
+                }
+            }
+        }
 
         pthread_mutex_unlock(&vetorDistancia.lock);
 
         sleep(1);
-       
     }
-    
-    //estava aqui
-    //}
-    
-    
-}
 
+    return NULL;
+}
 
 //terminal é a main
 int main(int argc, char *argv[])
@@ -827,20 +791,21 @@ int main(int argc, char *argv[])
 
     pthread_create(&tEntrada, NULL, theadFilaEntrada, NULL);
     pthread_create(&tSaida, NULL, theadFSaida, NULL);
-    pthread_create(&tVetorDistancia, NULL, theadVetorDistancia, NULL);
+   
     
 
     //menu, esse id vai mudar ta aqui só pra n dar bug, ele é o global e vai passar d parametro
     //quando inicia o arquivo
     //int id = 1;
     int escolha;
+    int roteadorInciado = 0;
 
     while (1)
     {
         printf("\n===============================\n");
         printf(" Bem-vindo a interface do roteador: %d\n", id);
         printf("===============================\n");
-        printf("1 - Ver status da conexao\n");
+        printf("1 - Iniciar Roteador\n");
         printf("2 - Enviar Mensagem\n");
         printf("3 - ESCOLHA3\n");
         printf("4 - ESCOLHA4\n");
@@ -860,7 +825,13 @@ int main(int argc, char *argv[])
         switch (escolha)
         {
             case 1:
-                printf("Status: Conectado e estável.\n");
+                if(roteadorInciado == 1){
+                    printf("Roteador ja iniciado\n");
+                    break;
+                }
+                roteadorInciado = 1;
+                printf("Iniciando Roteador.\n");
+                pthread_create(&tVetorDistancia, NULL, theadVetorDistancia, NULL);
                 break;
             case 2:
                 printf("Enviando Mensagem\n");
