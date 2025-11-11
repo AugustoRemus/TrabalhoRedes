@@ -681,7 +681,7 @@ void *theadVetorDistancia(){
             if (vetoresParaAnalize.testados[i] == 0) {
                 // percorre todos os destinos recebidos do roteador i
                 for (int d = 0; d < numRoteadores; d++) {
-                    
+
                     int destino = vetoresParaAnalize.vetoresNaoAnalizados[i].vetores[d].destino;
                     int custoRecebido = vetoresParaAnalize.vetoresNaoAnalizados[i].vetores[d].custo;
 
@@ -701,6 +701,13 @@ void *theadVetorDistancia(){
 
                     //custo total ate o destino via esse vizinho
                     int novoCusto = custoAteVizinho + custoRecebido;
+
+                    //evita o contando até o infinito, se ta contando d+ pula
+                    if (novoCusto > 32){
+                        continue;
+                    }
+
+
 
                     //se o destino ainda n tem rota, ou achou uma melhor
                     if (vetorDistancia.vetores[destino - 1].custo < 0 ||
