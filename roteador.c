@@ -8,6 +8,9 @@
 #define Controle 0
 #define Dado 1
 
+//se estiver debugando == 1 se n qualquer outra coisa
+#define debugando 0
+
 #define numRoteadores 4
 
 
@@ -98,15 +101,15 @@ typedef struct
 
 
 
-
-
 //filas globais
 
 Fila filaEntrada;
 Fila filaSaida;
 int id;  //mudar vai receber do arquivo, ai abre outroa rquivo para pegar seu ip
 int meuSocket;
+//vetor que guarda a topografia
 VetoresDistancia vetorDistancia;
+//vetor com as topografias para analize
 AnalizarVetores vetoresParaAnalize;
 
 
@@ -158,7 +161,7 @@ void addMsg(Mensagem msg ){
 //passar como ponteiro
 //passar o semaforo para bloquear na hora certa !!!!!!!!!!!!!!! tem q mudar pra multithead
 //ou sempre pegar o lock, se para daria pra controlar melhor
-void encaminharMsg(Mensagem msg ){
+void sendMsg(Mensagem msg ){
 
     pthread_mutex_lock(&filaSaida.lock);
     
@@ -231,6 +234,52 @@ Mensagem getMsg(){
 
 }
 
+
+
+//pega o topo da pilha da fila de saida
+Mensagem getMsgFilaSaida(){
+    
+    //msg de erro, acho q pode dar erro, acho estranho como ta mas tava funcionando
+    Mensagem vazio = {0};
+
+    //tenta pegar o lock
+    pthread_mutex_lock(&filaSaida.lock);
+
+
+    //get lock
+    if(filaSaida.tamanho == 0){
+
+        pthread_mutex_unlock(&filaSaida.lock);
+        return vazio;
+
+    }
+
+    //passou os testes, pega a mensagem
+
+    Mensagem retorno = filaSaida.conteudo[0];
+    
+    //tira da lista zera os bytes
+    memset(&filaSaida.conteudo[0], 0, sizeof(Mensagem));
+
+    //faz voltar 1 pos
+    for(int i = 1; i<filaSaida.tamanho;i++){
+        filaSaida.conteudo[i-1] = filaSaida.conteudo[i];
+    }
+
+    //diminui o tamanho
+    filaSaida.tamanho --;
+
+    //libera o lock e tira do semafaro, semafaro tem q ter coisa
+
+    pthread_mutex_unlock(&filaSaida.lock);
+
+    return retorno;
+    
+
+}
+
+
+
 void printMsg(Mensagem msg){
 
       char *tipo;
@@ -242,7 +291,7 @@ void printMsg(Mensagem msg){
     }
 
     printf("printando Mensagem:\n");
-    printf("Origem: %d\nDestino: %d\nTipo: %d\nConteudo: %s",msg.origem, msg.destino,tipo,msg.conteudo);
+    printf("Origem: %d\nDestino: %d\nTipo: %s\nConteudo: %s",msg.origem, msg.destino,tipo,msg.conteudo);
 
 
 }
@@ -271,12 +320,15 @@ void printFila(Fila fila){
 }
 
 
-
-Mensagem criarMsg(){
+//func para criar msg de dado
+Mensagem criarMsgDados(){
 
     Mensagem newMsg;
-    newMsg.destino = id;
+
+    newMsg.origem = id;
     
+    //o define n estava fncionando
+    newMsg.tipo = Dado;
 
 
     int escolha;
@@ -286,12 +338,13 @@ Mensagem criarMsg(){
 
         //faz um teste para ver se leu um valor inteiro, caso contrario usuario foi burro
         if (scanf("%d", &escolha) != 1) {
-            printf("Entrada inválida!\n");
+            printf("Entrada invalida!\n");
             //limpa o buffer do scanf
             while (getchar() != '\n');
             continue;
         }
-        if(escolha == id){
+        //isso é para debug tirar o + 1000
+        if(escolha == id + 1000){
             printf("Destino igual a origem, escolha novamente\n"); 
             //limpa o buffer do scanf
             while (getchar() != '\n');
@@ -304,7 +357,7 @@ Mensagem criarMsg(){
         break;
     }
 
-    printf("Digite o conteúdo da mensagem: \n");
+    printf("Digite o conteudo da mensagem: \n");
     while(1){
 
         //pega a msg e salva
@@ -324,7 +377,6 @@ Mensagem criarMsg(){
         break;
     }    
 
-    newMsg.tipo = Dado;
     return newMsg;
 }
 
@@ -332,7 +384,7 @@ Mensagem criarMsg(){
 
 
 //abr o arquivo e pega o scokt
-int pegaSocket(const char *filename) {
+int pegaSocket(const char *filename, int idProcurar) {
 
     FILE *f = fopen(filename, "r");
     if (!f) {
@@ -345,7 +397,7 @@ int pegaSocket(const char *filename) {
 
     // olha cada linha no formato "id port ip", o 63 é para pegar o ip, mas vai ignorar se n for local
     while (fscanf(f, "%d %d %63s", &tempId, &port, ip) == 3) {
-        if (tempId == id) {
+        if (tempId == idProcurar) {
             fclose(f);
             return port; //achou a porta
         }
@@ -440,7 +492,11 @@ void *theadFilaEntrada() {
             //vai receber o custo para todos em ordem
             //cuida da string recebida da msg
 
-            char msg[] = newMensagem.conteudo;
+            
+            char msg[500];
+            
+            strncpy(msg, newMensagem.conteudo, sizeof(msg) - 1);
+            msg[sizeof(msg) - 1] = '\0'; //garante terminação
 
             //contador
             int i = 0;
@@ -466,7 +522,7 @@ void *theadFilaEntrada() {
     
         if(newMensagem.destino != id){
 
-            //rencaminhar msg
+            sendMsg(newMensagem);
 
         }
 
@@ -487,6 +543,25 @@ void *theadFSaida() {
 
      while (1){
         sem_wait(&filaSaida.cheio);
+
+    
+        Mensagem newMsg = getMsgFilaSaida();
+
+        //vai pegar essa newMsg e botar ela no socket do roteador do ip, tem q abrir o arquvio
+        //e ver o socket dele
+
+        if(newMsg.destino == id){
+            printf("capitei uma msg para mim");
+        }
+        
+
+
+        int numSocketEnviar = pegaSocket("roteador.config", newMsg.destino);
+        printf("numSocketEnviar: %d", numSocketEnviar );
+
+
+
+
 
         //aqui vai mandar pro socket
     }
@@ -587,7 +662,10 @@ void *theadVetorDistancia(){
     
     sleep(1);
 
-    imprimirVetorDistancia();
+    if(debugando == 1){
+        imprimirVetorDistancia();
+    }
+   
 
     pthread_mutex_unlock(&vetorDistancia.lock);
 
@@ -675,12 +753,45 @@ void *theadVetorDistancia(){
         }
 
         pthread_mutex_unlock(&vetoresParaAnalize.lock);
-        pthread_mutex_unlock(&vetorDistancia.lock);
+        
+
+        //cria o txt q vai mandar na msg d controle
+        char stringControle[500] = "";
+        char temp[32];  //guarda o numero antes d botar
+
+        for (int aux = 0; aux < numRoteadores; aux++) {
+            //converte o custo em str e bota um espaço
+            snprintf(temp, sizeof(temp), "%d ", vetorDistancia.vetores[aux].custo);
+            strcat(stringControle, temp);
+        }
+        
 
 
         if(mudou == 1){
-            //manda o vetor para os outros pra fila d saida
+            //pra todos os roteadores
+            for(int roteadores = 0; roteadores<numRoteadores;roteadores++){
+                //se for vizinho
+                if(vetorDistancia.vetores[roteadores].isVisinho == 1){
+
+                    Mensagem novaMsgControle;
+                    novaMsgControle.origem = id;
+                    novaMsgControle.destino = roteadores;
+                    novaMsgControle.tipo = Controle;
+                    //vai botar no campo da nova msg e cortar o tamanho
+                    strncpy(novaMsgControle.conteudo, stringControle, sizeof(novaMsgControle.conteudo) - 1);
+                    //marca o ultimo char como fim do texto
+                    novaMsgControle.conteudo[sizeof(novaMsgControle.conteudo) - 1] = '\0';
+
+                    //bota na fila d saida
+                    sendMsg(novaMsgControle);
+
+                }
+
+            }
         }
+
+
+        pthread_mutex_unlock(&vetorDistancia.lock);
 
         sleep(1);
        
@@ -700,7 +811,7 @@ int main(int argc, char *argv[])
     id = atoi(argv[1]); //converte o argumento para inteiro, isso   q faz ter q passar argumento
     //tem q passar certo se n da pau
 
-    meuSocket = pegaSocket("roteador.config");
+    meuSocket = pegaSocket("roteador.config", id);
 
     printf("socket: %d", meuSocket);
 
@@ -735,7 +846,7 @@ int main(int argc, char *argv[])
         printf("4 - ESCOLHA4\n");
         printf("0 - Sair\n");
         printf("-------------------------------\n");
-        printf("Digite o numero da opção desejada: ");
+        printf("Digite o numero da opcao desejada: ");
         
 
         //faz um teste para ver se leu um valor inteiro, caso contrario usuario foi burro
@@ -754,9 +865,9 @@ int main(int argc, char *argv[])
             case 2:
                 printf("Enviando Mensagem\n");
 
-                Mensagem novaMensagem = criarMsg();
+                Mensagem novaMensagem = criarMsgDados();
 
-                encaminharMsg(novaMensagem);
+                sendMsg(novaMensagem);
 
                 char *tipo;
                 if (novaMensagem.tipo == Controle){
