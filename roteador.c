@@ -702,6 +702,7 @@ void *theadVetorDistancia(){
                     //custo total ate o destino via esse vizinho
                     int novoCusto = custoAteVizinho + custoRecebido;
 
+                    //ta certo?
                     //evita o contando até o infinito, se ta contando d+ pula
                     if (novoCusto > 32){
                         continue;
@@ -719,7 +720,7 @@ void *theadVetorDistancia(){
                     }
                 }
 
-                // marca como testado (já analisado)
+                //marca como testado
                 vetoresParaAnalize.testados[i] = 1;
             }
         }
