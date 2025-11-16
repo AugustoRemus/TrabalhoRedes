@@ -3,6 +3,7 @@
 #include <string.h>
 #include <pthread.h>
 #include <semaphore.h>
+#include <unistd.h>
 #include <time.h>
 #include<arpa/inet.h>
 #include<sys/socket.h>
@@ -105,7 +106,7 @@ typedef struct
 } AnalizarVetores;
 
 //se estiver debugando == 1 se n qualquer outra coisa
-int debugando = 0;
+int debugando = 1;
 
 //filas globais
 
@@ -509,13 +510,7 @@ void *theadFilaEntrada() {
             printf("[DEBUG] Recebido %ld bytes de %s:%d\n", recvd, inet_ntoa(si_other.sin_addr), ntohs(si_other.sin_port));
             printf("[DEBUG] Mensagem recebida: tipo=%d origem=%d destino=%d conteudo='%s'\n", m.tipo, m.origem, m.destino, m.conteudo);
         }
-        /*
-        else{
-            if(m.destino == id){
-                printf("Chegou uma nova mensagem do roteador %d: %s\n", m.origem, m.conteudo);
-            }
-        }
-            */
+      
         // adiciona na fila interna
         addMsg(m);
     }
@@ -544,9 +539,20 @@ void *packManager() {
             printf("Nova Mensagem do roteador %d: %s\n", newMensagem.origem, newMensagem.conteudo);
             fflush(stdout);
         }
-        /*
+
+        if(newMensagem.destino != id){
+
+            sendMsg(newMensagem);
+
+        }
+
+        
 
         if (newMensagem.tipo == Controle && newMensagem.destino == id){
+
+            if(debugando == 1){
+                printf("[DEBUG] processando mensagem de controle do roteador %d\n", newMensagem.origem);
+            }
 
             //formatar a msg para passar nesse vetor
             vetoresRecebidos newVetor;
@@ -582,12 +588,8 @@ void *packManager() {
 
         }
     
-        if(newMensagem.destino != id){
-
-            sendMsg(newMensagem);
-
-        }
-        */
+      
+        
 
 
     }
@@ -604,13 +606,10 @@ void *theadFSaida() {
         if(debugando == 1){ 
         printf("[DEBUG] Preparando para enviar mensagem: tipo=%d origem=%d destino=%d conteudo='%s'\n", newMsg.tipo, newMsg.origem, newMsg.destino, newMsg.conteudo);
         }
-
-        if(newMsg.destino == id){
-            printf("capitei uma msg para mim\n");
-        }
         
-        //para debug
-        int saida = newMsg.destino;
+        //pega a saida do vetor distancia
+         int saida = vetorDistancia.vetores[newMsg.destino - 1].saida;
+
         if(debugando == 1){
             printf("a saida agora esta com o valor: %d\n", saida);
            imprimirVetorDistancia();
@@ -640,7 +639,12 @@ void *theadFSaida() {
         if (sent == -1) {
             perror("sendto()");
         } else {
-            printf("Mensagem enviada para roteador %d (porta %d), %ld bytes enviados\n", saida, numSocketEnviar, sent);
+            
+            if(newMsg.tipo == Dado){
+                printf("Mensagem enviada para roteador %d (porta %d), %ld bytes enviados\n", saida, numSocketEnviar, sent);
+            }
+            
+            
         }
     }
     return NULL;
@@ -711,7 +715,30 @@ void *theadVetorDistancia(){
         printf("Iniciando o envio dos vetores distancia\n");
     }
 
-   
+    //manda o vetor distancia para todos os vizinhos
+    pthread_mutex_lock(&vetorDistancia.lock);
+    char stringControle[500] = "";
+    char temp[32];
+    for (int aux = 0; aux < numRoteadores; aux++) {
+        snprintf(temp, sizeof(temp), "%d ", vetorDistancia.vetores[aux].custo);
+        strncat(stringControle, temp, sizeof(stringControle) - strlen(stringControle) - 1);
+    }
+    for (int roteadores = 0; roteadores < numRoteadores; roteadores++) {
+        if (vetorDistancia.vetores[roteadores].isVisinho == 1) {
+            Mensagem novaMsgControle;
+            novaMsgControle.origem = id;
+            novaMsgControle.destino = roteadores + 1;
+            novaMsgControle.tipo = Controle;
+            strncpy(novaMsgControle.conteudo, stringControle, sizeof(novaMsgControle.conteudo) - 1);
+            novaMsgControle.conteudo[sizeof(novaMsgControle.conteudo) - 1] = '\0';
+            sendMsg(novaMsgControle);
+            if(debugando == 1){
+                printf("[DEBUG] Enviando vetor de distancia inicial para vizinho %d: %s\n", roteadores+1, stringControle);
+            }
+        }
+    }
+    pthread_mutex_unlock(&vetorDistancia.lock);
+
     // loop principal
     while (1)
     {
@@ -820,26 +847,22 @@ void *theadVetorDistancia(){
         //cria o txt q vai mandar na msg de controle
         char stringControle[500] = "";
         char temp[32];
-
         for (int aux = 0; aux < numRoteadores; aux++) {
             snprintf(temp, sizeof(temp), "%d ", vetorDistancia.vetores[aux].custo);
             strncat(stringControle, temp, sizeof(stringControle) - strlen(stringControle) - 1);
         }
-
-        if (mudou == 1) {
-            // pra todos os roteadores
-            for (int roteadores = 0; roteadores < numRoteadores; roteadores++) {
-                //se for vizinho
-                if (vetorDistancia.vetores[roteadores].isVisinho == 1) {
-                    //cria a msg d controle e manda pra eles
-                    Mensagem novaMsgControle;
-                    novaMsgControle.origem = id;
-                    novaMsgControle.destino = roteadores + 1; 
-                    novaMsgControle.tipo = Controle;
-                    strncpy(novaMsgControle.conteudo, stringControle, sizeof(novaMsgControle.conteudo) - 1);
-                    novaMsgControle.conteudo[sizeof(novaMsgControle.conteudo) - 1] = '\0';
-
-                    sendMsg(novaMsgControle);
+        //fica enviando o vetor distancia
+        for (int roteadores = 0; roteadores < numRoteadores; roteadores++) {
+            if (vetorDistancia.vetores[roteadores].isVisinho == 1) {
+                Mensagem novaMsgControle;
+                novaMsgControle.origem = id;
+                novaMsgControle.destino = roteadores + 1;
+                novaMsgControle.tipo = Controle;
+                strncpy(novaMsgControle.conteudo, stringControle, sizeof(novaMsgControle.conteudo) - 1);
+                novaMsgControle.conteudo[sizeof(novaMsgControle.conteudo) - 1] = '\0';
+                sendMsg(novaMsgControle);
+                if(debugando == 1){
+                    printf("[DEBUG] Enviando vetor de distancia para vizinho %d: %s\n", roteadores+1, stringControle);
                 }
             }
         }
@@ -920,7 +943,7 @@ int main(int argc, char *argv[])
         printf("===============================\n");
         printf("1 - Iniciar Roteador\n");
         printf("2 - Enviar Mensagem\n");
-        printf("3 - ESCOLHA3\n");
+        printf("3 - Pritar Topografia\n");
         printf("4 - Ativar/Desativar Debug\n");
         printf("0 - Sair\n");
         printf("-------------------------------\n");
@@ -960,8 +983,10 @@ int main(int argc, char *argv[])
                 else{
                     tipo = "dado";
                 }
-
-                printf("Mensagem enviada do roteador: %d do tipo %s com destino: %d\n", id,tipo,novaMensagem.destino);
+                if(novaMensagem.tipo == Dado){
+                    printf("Mensagem enviada do roteador: %d do tipo %s com destino: %d\n", id,tipo,novaMensagem.destino);
+                }
+                
                 
 
                 printMsg(novaMensagem);
@@ -970,7 +995,7 @@ int main(int argc, char *argv[])
 
 
             case 3:
-                printf(".\n");
+                imprimirVetorDistancia();
                 break;
             case 4:
                 if(debugando == 1){
