@@ -1,21 +1,24 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
 #include <semaphore.h>
 #include <time.h>
+#include<arpa/inet.h>
+#include<sys/socket.h>
 
 #define CONFIG_FILE "roteador.config"
 #define ENLACE_FILE "enlace.config"
 #define Controle 0
 #define Dado 1
 
-//se estiver debugando == 1 se n qualquer outra coisa
-#define debugando 1
 
 #define numRoteadores 4
-
-
 #define tamanhoMaximoFila 15
+
+#define SERVER "127.0.0.1"
+#define BUFLEN 512  //Max length of buffer
+
 
 
 typedef struct{
@@ -101,18 +104,27 @@ typedef struct
     
 } AnalizarVetores;
 
-
+//se estiver debugando == 1 se n qualquer outra coisa
+int debugando = 0;
 
 //filas globais
 
 Fila filaEntrada;
 Fila filaSaida;
 int id;  //mudar vai receber do arquivo, ai abre outroa rquivo para pegar seu ip
-int meuSocket;
+
 //vetor que guarda a topografia
 VetoresDistancia vetorDistancia;
 //vetor com as topografias para analize
 AnalizarVetores vetoresParaAnalize;
+
+//pode nome d var maiuscula?
+int Port;
+
+//socket global
+int sock;
+struct sockaddr_in si_me, si_other;
+int slen = sizeof(si_other);
 
 
 void initFilas() {
@@ -485,108 +497,81 @@ void imprimirVetorDistancia(){
 //theads ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 void *theadFilaEntrada() {
 
-    //printFila(filaEntrada);
-   
+    Mensagem m;
 
-    while (1){
-        //tem coisa entao vai dar o get, new ´é a mensagem que chegou agora tem q tratar
-        sem_wait(&filaEntrada.cheio);
+    while (1) {
+        memset(&m, 0, sizeof(Mensagem));
 
-        Mensagem newMensagem = getMsg();
-
-
-        //msg pra printar pta mim
-        if(newMensagem.tipo == Dado && newMensagem.destino == id){
-            printMsgFormatada(newMensagem);
+        //recebe o socket
+        if(debugando == 1){
+            printf("[DEBUG] Esperando mensagem UDP...\n");
         }
-
-        if (newMensagem.tipo == Controle && newMensagem.destino == id){
-
-            //formatar a msg para passar nesse vetor
-            vetoresRecebidos newVetor;
-
-            //vai receber o custo para todos em ordem
-            //cuida da string recebida da msg
-
-            
-            char msg[500];
-            
-            strncpy(msg, newMensagem.conteudo, sizeof(msg) - 1);
-            msg[sizeof(msg) - 1] = '\0'; //garante terminação
-
-            //contador
-            int i = 0;
-
-            // quebra a string por espaços
-            char *token = strtok(msg, " ");
-
-            //olhar onde devo colocar 
-            while (token != NULL && i < numRoteadores) {
-                newVetor.vetores[i].custo = atoi(token);  // converte pra int
-                newVetor.vetores[i].destino = i + 1; //pq o roteador 1 fica na pos 0
-                i++;
-                token = strtok(NULL, " ");
-            }
-
-            
-
-            //////////////////fazeeeeeeeeeeeeeeeeeeeeeeeeeeer
-
-            addVetorAnalize(newMensagem.origem,newVetor);
-
+        ssize_t recvd = recvfrom(sock, &m, sizeof(Mensagem), 0,
+            (struct sockaddr *)&si_other, &slen);
+        if (recvd == -1) {
+            perror("recvfrom");
+            continue;
         }
-    
-        if(newMensagem.destino != id){
-
-            sendMsg(newMensagem);
-
+        if(debugando == 1){
+            printf("[DEBUG] Recebido %ld bytes de %s:%d\n", recvd, inet_ntoa(si_other.sin_addr), ntohs(si_other.sin_port));
+            printf("[DEBUG] Mensagem recebida: tipo=%d origem=%d destino=%d conteudo='%s'\n", m.tipo, m.origem, m.destino, m.conteudo);
         }
-
-       
-        //printMsg(newMensagem);
-        //só ta pegando pra tirar a msg
-
-        //descobrir como fazer isso funcionar, olhar no tranbalho, n to entendendo como ele pega o id dele
-        //if (newMensagem.destino == )
-
+        else{
+            printf("Chegou uma nova mensagem do roteador %d: %s\n", m.origem, m.conteudo);
+        }
+        // adiciona na fila interna
+        addMsg(m);
     }
+
     return NULL;
 }
 
 
-//aqui vai mandar as trheadas
+
 void *theadFSaida() {
 
      while (1){
         sem_wait(&filaSaida.cheio);
 
-    
         Mensagem newMsg = getMsgFilaSaida();
-
-        //vai pegar essa newMsg e botar ela no socket do roteador do ip, tem q abrir o arquvio
-        //e ver o socket dele
+        if(debugando == 1){ 
+        printf("[DEBUG] Preparando para enviar mensagem: tipo=%d origem=%d destino=%d conteudo='%s'\n", newMsg.tipo, newMsg.origem, newMsg.destino, newMsg.conteudo);
+        }
 
         if(newMsg.destino == id){
-            printf("capitei uma msg para mim");
+            printf("capitei uma msg para mim\n");
         }
         
-        
-      
-        //pega a saida do vetor (-1 pq no vetor ta 1 antes)
-        int saida = vetorDistancia.vetores[newMsg.destino - 1].saida;
-        printf("a porra da saida agora esta com o valor: %d\n", saida);
-       
-        imprimirVetorDistancia();
-
-        //pega o socket da saida
+        //para debug
+        int saida = newMsg.destino;
+        printf("a saida agora esta com o valor: %d\n", saida);
+        if(debugando == 1){
+           imprimirVetorDistancia();
+        }
         int numSocketEnviar = pegaSocket("roteador.config", saida);
-        printf("numSocketEnviar: %d", numSocketEnviar );
+        printf("numSocketEnviar: %d\n", numSocketEnviar );
 
+        if (numSocketEnviar == -1) {
+            fprintf(stderr, "Erro: porta do roteador de saida nao encontrada para saida %d\n", saida);
+            continue;
+        }
 
+        struct sockaddr_in dest;
+        memset(&dest, 0, sizeof(dest));
+        dest.sin_family = AF_INET;
+        dest.sin_port = htons(numSocketEnviar);
+        if (inet_aton(SERVER, &dest.sin_addr) == 0) {
+            fprintf(stderr, "Erro: inet_aton falhou\n");
+            continue;
+        }
 
-
-
-        //aqui vai mandar pro socket
+        printf("[DEBUG] Enviando mensagem UDP para %s:%d...\n", SERVER, numSocketEnviar);
+        ssize_t sent = sendto(sock, &newMsg, sizeof(Mensagem), 0, (struct sockaddr*)&dest, slen);
+        if (sent == -1) {
+            perror("sendto()");
+        } else {
+            printf("Mensagem enviada para roteador %d (porta %d), %ld bytes enviados\n", saida, numSocketEnviar, sent);
+        }
     }
     return NULL;
 }
@@ -804,9 +789,37 @@ int main(int argc, char *argv[])
     id = atoi(argv[1]); //converte o argumento para inteiro, isso   q faz ter q passar argumento
     //tem q passar certo se n da pau
 
-    meuSocket = pegaSocket("roteador.config", id);
+    Port = pegaSocket("roteador.config", id);
+    printf("socket: %d\n", Port);
 
-    printf("socket: %d", meuSocket);
+        
+        //pegando o socket igual no exemplo dado
+
+    if ((sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1) {
+        perror("socket");
+        exit(1);
+    }
+
+    memset((char *)&si_me, 0, sizeof(si_me));
+    si_me.sin_family = AF_INET;
+    si_me.sin_port = htons(Port);
+    si_me.sin_addr.s_addr = htonl(INADDR_ANY);
+
+    if (bind(sock, (struct sockaddr *)&si_me, sizeof(si_me)) == -1) {
+        perror("bind");
+        exit(1);
+    }
+
+    printf("Roteador %d ouvindo na porta %d...\n", id, Port);
+
+
+
+
+
+
+
+
+
 
     initFilas();
 
@@ -837,10 +850,10 @@ int main(int argc, char *argv[])
         printf("1 - Iniciar Roteador\n");
         printf("2 - Enviar Mensagem\n");
         printf("3 - ESCOLHA3\n");
-        printf("4 - ESCOLHA4\n");
+        printf("4 - Ativar/Desativar Debug\n");
         printf("0 - Sair\n");
         printf("-------------------------------\n");
-        printf("Digite o numero da opcao desejada: ");
+        printf("Digite o numero da opcao desejada: \n");
         
 
         //faz um teste para ver se leu um valor inteiro, caso contrario usuario foi burro
@@ -889,7 +902,16 @@ int main(int argc, char *argv[])
                 printf(".\n");
                 break;
             case 4:
+                if(debugando == 1){
+                    debugando = 0;
+                    printf("Debug desativado");
+                }
+                else{
+                    debugando = 1;
+                    printf("Debug ativado");
+                }
                 printf(".\n");
+
                 break;
             case 0:
                 printf("Saindo...\n");
