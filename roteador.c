@@ -311,14 +311,7 @@ void printMsg(Mensagem msg){
 }
 
 
-//pra imprimir msg d texto
-void printMsgFormatada(Mensagem msg){
 
-    printf("Nova Mensagem do roteador: %d :\n", msg.origem);
-    printf("%s",msg.conteudo);
-
-
-}
 
 
 
@@ -416,9 +409,9 @@ int pegaSocket(const char *filename, int idProcurar) {
         if (tempId == idProcurar) {
             fclose(f);
 
-
-            printf("retornando %d para o id: %d\n", port,idProcurar);
-
+            if(debugando == 1){
+                printf("retornando %d para o id: %d\n", port,idProcurar);
+            }
             return port; //achou a porta
         }
     }
@@ -516,9 +509,13 @@ void *theadFilaEntrada() {
             printf("[DEBUG] Recebido %ld bytes de %s:%d\n", recvd, inet_ntoa(si_other.sin_addr), ntohs(si_other.sin_port));
             printf("[DEBUG] Mensagem recebida: tipo=%d origem=%d destino=%d conteudo='%s'\n", m.tipo, m.origem, m.destino, m.conteudo);
         }
+        /*
         else{
-            printf("Chegou uma nova mensagem do roteador %d: %s\n", m.origem, m.conteudo);
+            if(m.destino == id){
+                printf("Chegou uma nova mensagem do roteador %d: %s\n", m.origem, m.conteudo);
+            }
         }
+            */
         // adiciona na fila interna
         addMsg(m);
     }
@@ -526,6 +523,76 @@ void *theadFilaEntrada() {
     return NULL;
 }
 
+void *packManager() {
+    if(debugando == 1){
+        printf("packManager thread started\n");
+    }    
+
+    while (1){
+        //tem coisa entao vai dar o get, new ´é a mensagem que chegou agora tem q tratar
+        sem_wait(&filaEntrada.cheio);
+
+        Mensagem newMensagem = getMsg();
+        
+        if(debugando == 1){
+            printf("[DEBUG] packManager chegou uma mensagem: tipo=%d origem=%d destino=%d conteudo='%s'\n", newMensagem.tipo, newMensagem.origem, newMensagem.destino, newMensagem.conteudo);
+        }
+
+
+        //msg pra printar pra mim
+        if(newMensagem.tipo == Dado && newMensagem.destino == id){
+            printf("Nova Mensagem do roteador %d: %s\n", newMensagem.origem, newMensagem.conteudo);
+            fflush(stdout);
+        }
+        /*
+
+        if (newMensagem.tipo == Controle && newMensagem.destino == id){
+
+            //formatar a msg para passar nesse vetor
+            vetoresRecebidos newVetor;
+
+            //vai receber o custo para todos em ordem
+            //cuida da string recebida da msg
+
+            
+            char msg[500];
+            
+            strncpy(msg, newMensagem.conteudo, sizeof(msg) - 1);
+            msg[sizeof(msg) - 1] = '\0'; //garante terminação
+
+            //contador
+            int i = 0;
+
+            // quebra a string por espaços
+            char *token = strtok(msg, " ");
+
+            //olhar onde devo colocar 
+            while (token != NULL && i < numRoteadores) {
+                newVetor.vetores[i].custo = atoi(token);  // converte pra int
+                newVetor.vetores[i].destino = i + 1; //pq o roteador 1 fica na pos 0
+                i++;
+                token = strtok(NULL, " ");
+            }
+
+            
+
+            //////////////////fazeeeeeeeeeeeeeeeeeeeeeeeeeeer
+
+            addVetorAnalize(newMensagem.origem,newVetor);
+
+        }
+    
+        if(newMensagem.destino != id){
+
+            sendMsg(newMensagem);
+
+        }
+        */
+
+
+    }
+
+}
 
 
 void *theadFSaida() {
@@ -544,12 +611,12 @@ void *theadFSaida() {
         
         //para debug
         int saida = newMsg.destino;
-        printf("a saida agora esta com o valor: %d\n", saida);
         if(debugando == 1){
+            printf("a saida agora esta com o valor: %d\n", saida);
            imprimirVetorDistancia();
         }
         int numSocketEnviar = pegaSocket("roteador.config", saida);
-        printf("numSocketEnviar: %d\n", numSocketEnviar );
+        
 
         if (numSocketEnviar == -1) {
             fprintf(stderr, "Erro: porta do roteador de saida nao encontrada para saida %d\n", saida);
@@ -565,7 +632,10 @@ void *theadFSaida() {
             continue;
         }
 
-        printf("[DEBUG] Enviando mensagem UDP para %s:%d...\n", SERVER, numSocketEnviar);
+        if(debugando == 1){   
+            printf("[DEBUG] Enviando mensagem UDP para %s:%d...\n", SERVER, numSocketEnviar);
+        }
+
         ssize_t sent = sendto(sock, &newMsg, sizeof(Mensagem), 0, (struct sockaddr*)&dest, slen);
         if (sent == -1) {
             perror("sendto()");
@@ -826,13 +896,14 @@ int main(int argc, char *argv[])
 
 
 
-    pthread_t tEntrada, tSaida, tVetorDistancia;
+    pthread_t tEntrada, tSaida, tVetorDistancia,tpackManager;
 
 
 
 
     pthread_create(&tEntrada, NULL, theadFilaEntrada, NULL);
     pthread_create(&tSaida, NULL, theadFSaida, NULL);
+    pthread_create(&tpackManager, NULL, packManager, NULL);
    
     
 
