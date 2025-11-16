@@ -775,6 +775,7 @@ void *theadVetorDistancia(){
                     int custoAteVizinho = vetorDistancia.vetores[i].custo;
 
                     //reinicia o tempo que n mandou msg pq chegou nova
+                    //só reseta para o vizinho que enviou (i)
                     vetorDistancia.vetores[i].rodadasSemResposta = 0;
 
                     // se n der pra chegar (-1), pula
@@ -789,8 +790,6 @@ void *theadVetorDistancia(){
                     if (novoCusto > 32){
                         continue;
                     }
-
-
 
                     //se o destino ainda n tem rota, ou achou uma melhor
                     if (vetorDistancia.vetores[destino - 1].custo < 0 ||
@@ -821,9 +820,9 @@ void *theadVetorDistancia(){
 
                 mudou = 1;
 
-                if(debugando == 1){
-                    printf("Enlace com o roteador %d caiu!\n", i+1);
-                }
+                
+                printf("Enlace com o roteador %d caiu!\n", i+1);
+                
 
             }
         }
