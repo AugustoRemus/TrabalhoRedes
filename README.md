@@ -1,6 +1,6 @@
 # TrabalhoRedes
 Trabalho de Redes 
-
+Participantes: Augusto Remus, Rafaela Gehrke
 
 para rodar:
 "roteador.c" é o nome do arquivo 
