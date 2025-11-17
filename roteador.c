@@ -352,7 +352,7 @@ Mensagem criarMsgDados(){
             continue;
         }
         //isso é para debug tirar o + 1000
-        if(escolha == id + 1000){
+        if(escolha == id){
             printf("Destino igual a origem, escolha novamente\n"); 
             //limpa o buffer do scanf
             while (getchar() != '\n');
@@ -709,7 +709,7 @@ void *theadVetorDistancia(){
 
 
     //criou os primeiros vetores distancia, da um sleep longo para os outros roteadores abrirem
-    sleep(10);
+    sleep(5);
 
     if(debugando == 1){
         printf("Iniciando o envio dos vetores distancia\n");
