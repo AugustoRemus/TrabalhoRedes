@@ -70,7 +70,7 @@ typedef struct
 
 
 
-//este roteador só tem q saber isso
+//este roteador só tem q saber isso quando mandarem os vetores distancia
 typedef struct 
 {
     //destino quer dizer qual roteador tem q ir e a saida é por onde vai passar a msg
@@ -145,10 +145,6 @@ void initFilas() {
 
 }
 
-
-//passar como ponteiro
-//passar o semaforo para bloquear na hora certa !!!!!!!!!!!!!!! tem q mudar pra multithead
-//ou sempre pegar o lock, se para daria pra controlar melhor
 void addMsg(Mensagem msg ){
 
     pthread_mutex_lock(&filaEntrada.lock);
@@ -173,9 +169,6 @@ void addMsg(Mensagem msg ){
     return;
 }
 
-//passar como ponteiro
-//passar o semaforo para bloquear na hora certa !!!!!!!!!!!!!!! tem q mudar pra multithead
-//ou sempre pegar o lock, se para daria pra controlar melhor
 void sendMsg(Mensagem msg ){
 
     pthread_mutex_lock(&filaSaida.lock);
@@ -237,10 +230,6 @@ Mensagem getMsg(){
     //diminui o tamanho
     filaEntrada.tamanho --;
 
-    //libera o lock e tira do semafaro, semafaro tem q ter coisa
-
-    //o semaforo só muda na thead
-    //sem_wait(&filaEntrada.cheio);
 
     pthread_mutex_unlock(&filaEntrada.lock);
 
@@ -313,10 +302,6 @@ void printMsg(Mensagem msg){
 
 
 
-
-
-
-
 void printFila(Fila fila){
 
     //se der pau botar o lock
@@ -361,7 +346,7 @@ Mensagem criarMsgDados(){
        
 
         newMsg.destino = escolha;
-        while (getchar() != '\n'); //limpa o ENTER que sobra do scanf
+        while (getchar() != '\n'); //limpa o scanf
         break;
     }
 
@@ -371,7 +356,7 @@ Mensagem criarMsgDados(){
         //pega a msg e salva
         fgets(newMsg.conteudo, sizeof(newMsg.conteudo), stdin);
 
-        //tira o '\n' que o fgets pode deixar no final
+        //tira o final da string
         newMsg.conteudo[strcspn(newMsg.conteudo, "\n")] = '\0';
 
         //se for maior q 100 manda fazer dnv
@@ -405,7 +390,7 @@ int pegaSocket(const char *filename, int idProcurar) {
     int tempId, port;
     char ip[64];
 
-    // olha cada linha no formato "id port ip", o 63 é para pegar o ip, mas vai ignorar se n for local
+    //pega as entradas, o 63 é pra pegar local
     while (fscanf(f, "%d %d %63s", &tempId, &port, ip) == 3) {
         if (tempId == idProcurar) {
             fclose(f);
@@ -421,7 +406,7 @@ int pegaSocket(const char *filename, int idProcurar) {
 
 
     fclose(f);
-    return -1; // não achou o id
+    return -1; //n achou o id
 }
 
 
@@ -460,7 +445,7 @@ void addVetorAnalize(int roteadorOrigem, vetoresRecebidos vetorAdicionar){
 
 
 
-//só chamar com o lock obtido, só pra debug
+//so chamar com o lock obtido, só pra debug
 void imprimirVetorDistancia(){
 
     time_t agora;
@@ -494,6 +479,7 @@ void *theadFilaEntrada() {
     Mensagem m;
 
     while (1) {
+        //igual o arquivo do professor
         memset(&m, 0, sizeof(Mensagem));
 
         //recebe o socket
@@ -518,6 +504,7 @@ void *theadFilaEntrada() {
     return NULL;
 }
 
+//cuida dos pacotes
 void *packManager() {
     if(debugando == 1){
         printf("packManager thread started\n");
@@ -580,9 +567,7 @@ void *packManager() {
                 token = strtok(NULL, " ");
             }
 
-            
-
-            //////////////////fazeeeeeeeeeeeeeeeeeeeeeeeeeeer
+    
 
             addVetorAnalize(newMensagem.origem,newVetor);
 
@@ -725,13 +710,18 @@ void *theadVetorDistancia(){
     }
     for (int roteadores = 0; roteadores < numRoteadores; roteadores++) {
         if (vetorDistancia.vetores[roteadores].isVisinho == 1) {
+
+            //cria a msg de controle e a string ela vai levar
             Mensagem novaMsgControle;
             novaMsgControle.origem = id;
             novaMsgControle.destino = roteadores + 1;
             novaMsgControle.tipo = Controle;
             strncpy(novaMsgControle.conteudo, stringControle, sizeof(novaMsgControle.conteudo) - 1);
+
+            //bota final de string no fim
             novaMsgControle.conteudo[sizeof(novaMsgControle.conteudo) - 1] = '\0';
             sendMsg(novaMsgControle);
+
             if(debugando == 1){
                 printf("[DEBUG] Enviando vetor de distancia inicial para vizinho %d: %s\n", roteadores+1, stringControle);
             }
@@ -758,7 +748,7 @@ void *theadVetorDistancia(){
         // pega o lock do vetor dos que chegaram
         pthread_mutex_lock(&vetoresParaAnalize.lock);
 
-        // ve se ja foi testado
+        //ve se ja foi testado
         for (int i = 0; i < numRoteadores; i++) {
             if (vetoresParaAnalize.testados[i] == 0) {
                 // percorre todos os destinos recebidos do roteador i
@@ -776,11 +766,11 @@ void *theadVetorDistancia(){
                     if (destino <= 0 || custoRecebido < 0)
                         continue;
 
-                    // custo ate o roteador que enviou (vai add no custo recebido)
+                    // custo ate o roteador que enviou (vai add no custo recebido
                     int custoAteVizinho = vetorDistancia.vetores[i].custo;
 
                     //reinicia o tempo que n mandou msg pq chegou nova
-                    //só reseta para o vizinho que enviou (i)
+                    //só reseta para o vizinho que enviou i
                     vetorDistancia.vetores[i].rodadasSemResposta = 0;
 
                     // se n der pra chegar (-1), pula
@@ -790,7 +780,7 @@ void *theadVetorDistancia(){
                     //custo total ate o destino via esse vizinho
                     int novoCusto = custoAteVizinho + custoRecebido;
 
-                    //ta certo?
+                   
                     //evita o contando até o infinito, se ta contando d+ pula
                     if (novoCusto > 32){
                         continue;
