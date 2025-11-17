@@ -16,6 +16,7 @@ dps
 
 numero escolhe o id
 
+todos os roteadores devem ser iniciados antes de que o belanford começe a agir, digitando 1
 
 ao iniciar o roteador só começa a fazer os teste do belmanford apos 10 segundos, esse tempo é para iniciar todos os roteadores, caso contrario ele vai fazer o 
 teste e considerar que caiu o enlaçe
