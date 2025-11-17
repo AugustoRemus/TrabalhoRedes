@@ -767,6 +767,11 @@ void *theadVetorDistancia(){
                     int destino = vetoresParaAnalize.vetoresNaoAnalizados[i].vetores[d].destino;
                     int custoRecebido = vetoresParaAnalize.vetoresNaoAnalizados[i].vetores[d].custo;
 
+                    //ignora ele mesmo
+                    if (destino == id){
+                        continue;
+                    }
+
                     //ignora os errado
                     if (destino <= 0 || custoRecebido < 0)
                         continue;
