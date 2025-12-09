@@ -7,6 +7,8 @@
 #include <time.h>
 #include<arpa/inet.h>
 #include<sys/socket.h>
+#include <openssl/hmac.h>
+#include <openssl/evp.h>
 
 #define CONFIG_FILE "roteador.config"
 #define ENLACE_FILE "enlace.config"
@@ -507,7 +509,7 @@ void *theadFilaEntrada() {
 //cuida dos pacotes
 void *packManager() {
     if(debugando == 1){
-        printf("packManager thread started\n");
+        printf("packManager thread comecou\n");
     }    
 
     while (1){
@@ -939,6 +941,7 @@ int main(int argc, char *argv[])
         printf("2 - Enviar Mensagem\n");
         printf("3 - Pritar Topografia\n");
         printf("4 - Ativar/Desativar Debug\n");
+        printf("5 - Gerar HMAC\n");
         printf("0 - Sair\n");
         printf("-------------------------------\n");
         printf("Digite o numero da opcao desejada: \n");
@@ -1006,6 +1009,31 @@ int main(int argc, char *argv[])
             case 0:
                 printf("Saindo...\n");
                 return 0;
+            case 5:
+                const unsigned char *key = (unsigned char *)"minha_chave_secreta";
+                const unsigned char *msg = (unsigned char *)"pacote_exemplo";
+
+                unsigned char hmac_result[EVP_MAX_MD_SIZE];
+                unsigned int len = 0;
+
+                //gera o HMAC
+                //algoritmo de hash (SHA-256)
+                HMAC(EVP_sha256(),
+                    //chave secreta    
+                    key, strlen((char*)key),
+                    //mensagem a ser autenticada (pacote)
+                    msg, strlen((char*)msg),  
+                    //resultado do HMAC
+                    hmac_result, &len);    
+
+                //mostra o HMAC gerado em formato hexadecimal
+                printf("HMAC: ");
+                for (int i = 0; i < len; i++)
+                    printf("%02x", hmac_result[i]);
+                printf("\n");
+                
+                break;
+
             default:
                 printf("Opção inválida! Tente novamente.\n");
                 break;
