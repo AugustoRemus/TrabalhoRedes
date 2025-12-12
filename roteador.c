@@ -38,8 +38,10 @@ typedef struct{
     int tipo;//tipo de msg
     int origem;//quem enviou
     int destino;//qual é o destino
-    // para fazer rota calcular no inicio
-    char conteudo[1024]; // Aumentado para suportar chaves públicas Falcon-512
+    char conteudo[1024]; 
+    // --- Adição para autenticação ---
+    uint8_t assinatura[700]; // Tamanho suficiente para Falcon-512
+    size_t assinatura_len;
 } Mensagem;
 
 typedef struct{
@@ -130,6 +132,9 @@ int Port;
 int sock;
 struct sockaddr_in si_me, si_other;
 int slen = sizeof(si_other);
+
+int assinar_mensagem(const uint8_t *msg, size_t msg_len, uint8_t *assinatura, size_t *assinatura_len);
+int verificar_mensagem(const uint8_t *msg, size_t msg_len, const uint8_t *assinatura, size_t assinatura_len, int id_vizinho);
 
 void initFilas() {
 
@@ -367,6 +372,12 @@ Mensagem criarMsgDados(){
         break;
     }    
 
+    // --- Assina a mensagem ---
+    if (assinar_mensagem((uint8_t*)newMsg.conteudo, strlen(newMsg.conteudo), newMsg.assinatura, &newMsg.assinatura_len) != OQS_SUCCESS) {
+        printf("[FALCON] Falha ao assinar a mensagem!\n");
+        newMsg.assinatura_len = 0;
+    }
+
     return newMsg;
 }
 
@@ -449,23 +460,22 @@ void imprimirVetorDistancia(){
 
 }
 
-// Envia a chave pública Falcon para todos os vizinhos
-void enviar_chave_publica_para_vizinhos() {
-    printf("[FALCON] Iniciando envio das chaves públicas para os vizinhos...\n");
-    pthread_mutex_lock(&vetorDistancia.lock);
+// Envia a chave pública Falcon para todos os outros roteadores
+void enviar_chave_publica_para_todos() {
+    printf("[FALCON] Iniciando envio das chaves públicas para TODOS os roteadores...\n");
     for (int i = 0; i < numRoteadores; i++) {
-        if (vetorDistancia.vetores[i].isVisinho == 1) {
-            Mensagem msgChave;
-            msgChave.origem = id;
-            msgChave.destino = i + 1;
-            msgChave.tipo = ChavePublica;
-            // Copia a chave pública para o campo conteudo
-            memcpy(msgChave.conteudo, falcon_public_key, falcon_public_key_len);
-            sendMsg(msgChave);
-            printf("[FALCON] Chave pública enviada para vizinho %d (%zu bytes)\n", i+1, falcon_public_key_len);
-        }
+        if ((i + 1) == id) continue; // Não envia para si mesmo
+        Mensagem msgChave;
+        msgChave.origem = id;
+        msgChave.destino = i + 1;
+        msgChave.tipo = ChavePublica;
+        memcpy(msgChave.conteudo, falcon_public_key, falcon_public_key_len);
+        // Zera assinatura e assinatura_len para não confundir
+        memset(msgChave.assinatura, 0, sizeof(msgChave.assinatura));
+        msgChave.assinatura_len = 0;
+        sendMsg(msgChave);
+        printf("[FALCON] Chave pública enviada para roteador %d (%zu bytes)\n", i+1, falcon_public_key_len);
     }
-    pthread_mutex_unlock(&vetorDistancia.lock);
 }
 
 //theads ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -513,7 +523,7 @@ void *packManager() {
             printf("[DEBUG] packManager chegou uma mensagem: tipo=%d origem=%d destino=%d conteudo='%s'\n", newMensagem.tipo, newMensagem.origem, newMensagem.destino, newMensagem.conteudo);
         }
 
-        // NOVO: Processa mensagem de chave pública
+        // Processa mensagem de chave pública de qualquer origem
         if (newMensagem.tipo == ChavePublica) {
             // Armazena a chave pública recebida do vizinho
             memcpy(falcon_public_keys_vizinhos[newMensagem.origem - 1], newMensagem.conteudo, falcon_public_key_len);
@@ -526,6 +536,15 @@ void *packManager() {
             continue; // Não processa como mensagem normal
         }
 
+        // --- Verifica assinatura das mensagens Dado ---
+        if(newMensagem.tipo == Dado){
+            int verif = verificar_mensagem((uint8_t*)newMensagem.conteudo, strlen(newMensagem.conteudo), newMensagem.assinatura, newMensagem.assinatura_len, newMensagem.origem-1);
+            if(verif != OQS_SUCCESS){
+                printf("[FALCON] Assinatura INVÁLIDA da mensagem do roteador %d! Mensagem descartada.\n", newMensagem.origem);
+                continue;
+            }
+        }
+
         //msg pra printar pra mim
         if(newMensagem.tipo == Dado && newMensagem.destino == id){
             printf("Nova Mensagem do roteador %d: %s\n", newMensagem.origem, newMensagem.conteudo);
@@ -533,9 +552,9 @@ void *packManager() {
         }
 
         if(newMensagem.destino != id){
-
+            // Encaminha a mensagem exatamente como recebida, sem alterar nada
             sendMsg(newMensagem);
-
+            continue;
         }
 
         if (newMensagem.tipo == Controle && newMensagem.destino == id){
@@ -689,7 +708,7 @@ void *theadVetorDistancia(){
     sleep(5);
 
     //envia as chaves públicas (todos já devem estar ouvindo)
-    enviar_chave_publica_para_vizinhos();
+    enviar_chave_publica_para_todos();
 
     printf("Iniciando o envio dos vetores distancia\n");
     
@@ -948,6 +967,7 @@ int main(int argc, char *argv[])
         printf("2 - Enviar Mensagem\n");
         printf("3 - Pritar Topografia\n");
         printf("4 - Ativar/Desativar Debug\n");
+        printf("5 - Enviar Mensagem Errada\n");
         printf("0 - Sair\n");
         printf("-------------------------------\n");
         printf("Digite o numero da opcao desejada: \n");
@@ -1012,6 +1032,18 @@ int main(int argc, char *argv[])
                 printf(".\n");
 
                 break;
+            case 5:
+
+
+                printf("Enviando Mensagem\n");
+
+                Mensagem novaMensagem2 = criarMsgDados();
+
+                novaMensagem2.conteudo[0] = 'X'; //corrompe a mensagem
+
+                sendMsg(novaMensagem2);
+
+
             case 0:
                 printf("Saindo...\n");
                 return 0;
