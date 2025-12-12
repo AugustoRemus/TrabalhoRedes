@@ -7,43 +7,50 @@
 #include <time.h>
 #include<arpa/inet.h>
 #include<sys/socket.h>
-#include <openssl/hmac.h>
-#include <openssl/evp.h>
+
+#include <oqs/oqs.h>
+
+#define numRoteadores 4
+#define tamanhoMaximoFila 150
+
+// --- INÍCIO: Adição para autenticação com Falcon ---
+// Cada roteador terá seu par de chaves (privada/pública)
+OQS_SIG *sig_falcon = NULL;
+uint8_t *falcon_public_key = NULL;
+uint8_t *falcon_secret_key = NULL;
+
+// Exemplo: array para armazenar as chaves públicas dos vizinhos
+uint8_t falcon_public_keys_vizinhos[numRoteadores][1025]; // 1025 = tamanho máximo Falcon-512
+size_t falcon_public_key_len = 0;
+size_t falcon_secret_key_len = 0;
+// --- FIM: Adição para autenticação com Falcon ---
 
 #define CONFIG_FILE "roteador.config"
 #define ENLACE_FILE "enlace.config"
 #define Controle 0
 #define Dado 1
-
-
-#define numRoteadores 4
-#define tamanhoMaximoFila 15
+#define ChavePublica 2 // Novo tipo de mensagem para troca de chave pública
 
 #define SERVER "127.0.0.1"
 #define BUFLEN 512  //Max length of buffer
-
-
 
 typedef struct{
     int tipo;//tipo de msg
     int origem;//quem enviou
     int destino;//qual é o destino
     // para fazer rota calcular no inicio
-    char conteudo[500]; //texto que a msg vai mandar
+    char conteudo[1024]; // Aumentado para suportar chaves públicas Falcon-512
 } Mensagem;
-
 
 typedef struct{
 
     int tamanho;
     Mensagem conteudo[tamanhoMaximoFila];
 
-  
     pthread_mutex_t lock; //protege o acesso a fila
     sem_t cheio;  //fica olhando pra n ficar executando
 
 } Fila;
-
 
 // vai ser guardado na orde, se quer ir para o roteador 3 acessa  VetorDistancia[2]
 typedef struct 
@@ -70,9 +77,7 @@ typedef struct
     
 } VetoresDistancia;
 
-
-
-//este roteador só tem q saber isso quando mandarem os vetores distancia
+//este roteador só tem q saber isso
 typedef struct 
 {
     //destino quer dizer qual roteador tem q ir e a saida é por onde vai passar a msg
@@ -83,8 +88,6 @@ typedef struct
 
 } DistanciaRecebido;
 
-
-
 // cada roteador vai mandar um destes para calcular o vetor distancia
 typedef struct 
 {
@@ -92,7 +95,6 @@ typedef struct
     DistanciaRecebido vetores[numRoteadores];
     
 } vetoresRecebidos;
-
 
 //quando chegar um novo vetor distancia armazena aqui para processar
 typedef struct 
@@ -108,7 +110,7 @@ typedef struct
 } AnalizarVetores;
 
 //se estiver debugando == 1 se n qualquer outra coisa
-int debugando = 1;
+int debugando = 0;
 
 //filas globais
 
@@ -129,7 +131,6 @@ int sock;
 struct sockaddr_in si_me, si_other;
 int slen = sizeof(si_other);
 
-
 void initFilas() {
 
     // filaEntrada
@@ -137,7 +138,6 @@ void initFilas() {
     memset(filaEntrada.conteudo, 0, sizeof(filaEntrada.conteudo));
     pthread_mutex_init(&filaEntrada.lock, NULL);
     sem_init(&filaEntrada.cheio, 0, 0);
-
 
     // filaSaida
     filaSaida.tamanho = 0;
@@ -147,6 +147,9 @@ void initFilas() {
 
 }
 
+//passar como ponteiro
+//passar o semaforo para bloquear na hora certa !!!!!!!!!!!!!!! tem q mudar pra multithead
+//ou sempre pegar o lock, se para daria pra controlar melhor
 void addMsg(Mensagem msg ){
 
     pthread_mutex_lock(&filaEntrada.lock);
@@ -154,7 +157,7 @@ void addMsg(Mensagem msg ){
 
     //testa se a fila ta cheioa
     if(filaEntrada.tamanho >= tamanhoMaximoFila){
-        printf("fila cheia");
+        printf("fila cheia\n");
 
         pthread_mutex_unlock(&filaEntrada.lock);
         return;
@@ -171,6 +174,9 @@ void addMsg(Mensagem msg ){
     return;
 }
 
+//passar como ponteiro
+//passar o semaforo para bloquear na hora certa !!!!!!!!!!!!!!! tem q mudar pra multithead
+//ou sempre pegar o lock, se para daria pra controlar melhor
 void sendMsg(Mensagem msg ){
 
     pthread_mutex_lock(&filaSaida.lock);
@@ -195,9 +201,6 @@ void sendMsg(Mensagem msg ){
     return;
 }
 
-
-
-
 //passa o global, pega o topo da fila, quando adiciona só taca no topo
 //Mensagem m = getMensagem(&minhafila);
 Mensagem getMsg(){
@@ -207,7 +210,6 @@ Mensagem getMsg(){
 
     //tenta pegar o lock
     pthread_mutex_lock(&filaEntrada.lock);
-
 
     //get lock
     if(filaEntrada.tamanho == 0){
@@ -232,15 +234,15 @@ Mensagem getMsg(){
     //diminui o tamanho
     filaEntrada.tamanho --;
 
+    //libera o lock e tira do semafaro, semafaro tem q ter coisa
+
+    //o semaforo só muda na thead
+    //sem_wait(&filaEntrada.cheio);
 
     pthread_mutex_unlock(&filaEntrada.lock);
 
     return retorno;
-    
-
 }
-
-
 
 //pega o topo da pilha da fila de saida
 Mensagem getMsgFilaSaida(){
@@ -250,7 +252,6 @@ Mensagem getMsgFilaSaida(){
 
     //tenta pegar o lock
     pthread_mutex_lock(&filaSaida.lock);
-
 
     //get lock
     if(filaSaida.tamanho == 0){
@@ -280,11 +281,7 @@ Mensagem getMsgFilaSaida(){
     pthread_mutex_unlock(&filaSaida.lock);
 
     return retorno;
-    
-
 }
-
-
 
 void printMsg(Mensagem msg){
 
@@ -292,17 +289,17 @@ void printMsg(Mensagem msg){
     if (msg.tipo == Controle){
         tipo = "Controle";
     }
-    else{
+    else if (msg.tipo == Dado){
         tipo = "dado";
+    }
+    else if (msg.tipo == ChavePublica){
+        tipo = "ChavePublica";
     }
 
     printf("printando Mensagem:\n");
     printf("Origem: %d\nDestino: %d\nTipo: %s\nConteudo: %s",msg.origem, msg.destino,tipo,msg.conteudo);
 
-
 }
-
-
 
 void printFila(Fila fila){
 
@@ -314,7 +311,6 @@ void printFila(Fila fila){
     pthread_mutex_unlock(&fila.lock);
 }
 
-
 //func para criar msg de dado
 Mensagem criarMsgDados(){
 
@@ -324,7 +320,6 @@ Mensagem criarMsgDados(){
     
     //o define n estava fncionando
     newMsg.tipo = Dado;
-
 
     int escolha;
 
@@ -339,7 +334,7 @@ Mensagem criarMsgDados(){
             continue;
         }
         //isso é para debug tirar o + 1000
-        if(escolha == id){
+        if(escolha == id + 1000){
             printf("Destino igual a origem, escolha novamente\n"); 
             //limpa o buffer do scanf
             while (getchar() != '\n');
@@ -348,7 +343,7 @@ Mensagem criarMsgDados(){
        
 
         newMsg.destino = escolha;
-        while (getchar() != '\n'); //limpa o scanf
+        while (getchar() != '\n'); //limpa o ENTER que sobra do scanf
         break;
     }
 
@@ -358,7 +353,7 @@ Mensagem criarMsgDados(){
         //pega a msg e salva
         fgets(newMsg.conteudo, sizeof(newMsg.conteudo), stdin);
 
-        //tira o final da string
+        //tira o '\n' que o fgets pode deixar no final
         newMsg.conteudo[strcspn(newMsg.conteudo, "\n")] = '\0';
 
         //se for maior q 100 manda fazer dnv
@@ -375,9 +370,6 @@ Mensagem criarMsgDados(){
     return newMsg;
 }
 
-
-
-
 //abr o arquivo e pega o scokt
 int pegaSocket(const char *filename, int idProcurar) {
 
@@ -392,7 +384,7 @@ int pegaSocket(const char *filename, int idProcurar) {
     int tempId, port;
     char ip[64];
 
-    //pega as entradas, o 63 é pra pegar local
+    // olha cada linha no formato "id port ip", o 63 é para pegar o ip, mas vai ignorar se n for local
     while (fscanf(f, "%d %d %63s", &tempId, &port, ip) == 3) {
         if (tempId == idProcurar) {
             fclose(f);
@@ -404,16 +396,9 @@ int pegaSocket(const char *filename, int idProcurar) {
         }
     }
 
-
-
-
     fclose(f);
-    return -1; //n achou o id
+    return -1; // não achou o id
 }
-
-
-
-
 
 void zerarFilaTesta(){
 
@@ -426,7 +411,6 @@ void zerarFilaTesta(){
     pthread_mutex_unlock(&vetoresParaAnalize.lock);
 
 }
-
 
 //vai botar o vetor para analizar, passa um vetor distancia, e o roteador q mandou
 void addVetorAnalize(int roteadorOrigem, vetoresRecebidos vetorAdicionar){
@@ -441,13 +425,9 @@ void addVetorAnalize(int roteadorOrigem, vetoresRecebidos vetorAdicionar){
 
     pthread_mutex_unlock(&vetoresParaAnalize.lock);
 
-
 }
 
-
-
-
-//so chamar com o lock obtido, só pra debug
+//só chamar com o lock obtido, só pra debug
 void imprimirVetorDistancia(){
 
     time_t agora;
@@ -465,15 +445,28 @@ void imprimirVetorDistancia(){
         printf("\nRoteador %d que esta na pos %d do vetor:\n", i+1, i);
         printf("vizinho : %d, custo: %d\n", vetorDistancia.vetores[i].isVisinho,vetorDistancia.vetores[i].custo );
         printf("saida: %d, tempo sem mandar o vetor: %d\n\n",vetorDistancia.vetores[i].saida, vetorDistancia.vetores[i].rodadasSemResposta);
-    
-        
     }
 
 }
 
-
-
-
+// Envia a chave pública Falcon para todos os vizinhos
+void enviar_chave_publica_para_vizinhos() {
+    printf("[FALCON] Iniciando envio das chaves públicas para os vizinhos...\n");
+    pthread_mutex_lock(&vetorDistancia.lock);
+    for (int i = 0; i < numRoteadores; i++) {
+        if (vetorDistancia.vetores[i].isVisinho == 1) {
+            Mensagem msgChave;
+            msgChave.origem = id;
+            msgChave.destino = i + 1;
+            msgChave.tipo = ChavePublica;
+            // Copia a chave pública para o campo conteudo
+            memcpy(msgChave.conteudo, falcon_public_key, falcon_public_key_len);
+            sendMsg(msgChave);
+            printf("[FALCON] Chave pública enviada para vizinho %d (%zu bytes)\n", i+1, falcon_public_key_len);
+        }
+    }
+    pthread_mutex_unlock(&vetorDistancia.lock);
+}
 
 //theads ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 void *theadFilaEntrada() {
@@ -481,7 +474,6 @@ void *theadFilaEntrada() {
     Mensagem m;
 
     while (1) {
-        //igual o arquivo do professor
         memset(&m, 0, sizeof(Mensagem));
 
         //recebe o socket
@@ -495,7 +487,7 @@ void *theadFilaEntrada() {
             continue;
         }
         if(debugando == 1){
-            printf("[DEBUG] Recebido %ld bytes de %s:%d\n", recvd, inet_ntoa(si_other.sin_addr), ntohs(si_other.sin_port));
+           
             printf("[DEBUG] Mensagem recebida: tipo=%d origem=%d destino=%d conteudo='%s'\n", m.tipo, m.origem, m.destino, m.conteudo);
         }
       
@@ -506,10 +498,9 @@ void *theadFilaEntrada() {
     return NULL;
 }
 
-//cuida dos pacotes
 void *packManager() {
     if(debugando == 1){
-        printf("packManager thread comecou\n");
+        printf("packManager thread started\n");
     }    
 
     while (1){
@@ -522,6 +513,18 @@ void *packManager() {
             printf("[DEBUG] packManager chegou uma mensagem: tipo=%d origem=%d destino=%d conteudo='%s'\n", newMensagem.tipo, newMensagem.origem, newMensagem.destino, newMensagem.conteudo);
         }
 
+        // NOVO: Processa mensagem de chave pública
+        if (newMensagem.tipo == ChavePublica) {
+            // Armazena a chave pública recebida do vizinho
+            memcpy(falcon_public_keys_vizinhos[newMensagem.origem - 1], newMensagem.conteudo, falcon_public_key_len);
+            printf("[FALCON] Chave pública recebida do roteador %d e armazenada (%zu bytes): ", newMensagem.origem, falcon_public_key_len);
+            for (size_t i = 0; i < 8 && i < falcon_public_key_len; i++) printf("%02X ", falcon_public_keys_vizinhos[newMensagem.origem - 1][i]);
+            printf("...\n");
+            
+            printf("Chave pública recebida do roteador %d armazenada (%zu bytes)\n", newMensagem.origem, falcon_public_key_len);
+            
+            continue; // Não processa como mensagem normal
+        }
 
         //msg pra printar pra mim
         if(newMensagem.tipo == Dado && newMensagem.destino == id){
@@ -534,8 +537,6 @@ void *packManager() {
             sendMsg(newMensagem);
 
         }
-
-        
 
         if (newMensagem.tipo == Controle && newMensagem.destino == id){
 
@@ -569,20 +570,11 @@ void *packManager() {
                 token = strtok(NULL, " ");
             }
 
-    
-
             addVetorAnalize(newMensagem.origem,newVetor);
 
         }
-    
-      
-        
-
-
     }
-
 }
-
 
 void *theadFSaida() {
 
@@ -605,7 +597,7 @@ void *theadFSaida() {
         
 
         if (numSocketEnviar == -1) {
-            fprintf(stderr, "Erro: porta do roteador de saida nao encontrada para saida %d\n", saida);
+            fprintf(stderr, "Erro: porta do roteador: %d de saida nao encontrada para saida %d\n", saida, newMsg.destino);
             continue;
         }
 
@@ -637,7 +629,6 @@ void *theadFSaida() {
     return NULL;
 }
 
-
 // cuida dos vetores distancias
 void *theadVetorDistancia(){
 
@@ -650,7 +641,7 @@ void *theadVetorDistancia(){
     //cria os vetores distancia e zera eles
     for(int i = 0; i< numRoteadores; i++){
         //ajusta ele mesmo
-        if (i == id){
+        if (i == id-1){ // id-1 para alinhar com o índice do vetor
             //custo zero
             vetorDistancia.vetores[i].custo = 0;
             vetorDistancia.vetores[i].saida = -1;
@@ -694,14 +685,14 @@ void *theadVetorDistancia(){
 
     pthread_mutex_unlock(&vetorDistancia.lock);
 
-
     //criou os primeiros vetores distancia, da um sleep longo para os outros roteadores abrirem
     sleep(5);
 
-    if(debugando == 1){
-        printf("Iniciando o envio dos vetores distancia\n");
-    }
+    //envia as chaves públicas (todos já devem estar ouvindo)
+    enviar_chave_publica_para_vizinhos();
 
+    printf("Iniciando o envio dos vetores distancia\n");
+    
     //manda o vetor distancia para todos os vizinhos
     pthread_mutex_lock(&vetorDistancia.lock);
     char stringControle[500] = "";
@@ -712,18 +703,13 @@ void *theadVetorDistancia(){
     }
     for (int roteadores = 0; roteadores < numRoteadores; roteadores++) {
         if (vetorDistancia.vetores[roteadores].isVisinho == 1) {
-
-            //cria a msg de controle e a string ela vai levar
             Mensagem novaMsgControle;
             novaMsgControle.origem = id;
             novaMsgControle.destino = roteadores + 1;
             novaMsgControle.tipo = Controle;
             strncpy(novaMsgControle.conteudo, stringControle, sizeof(novaMsgControle.conteudo) - 1);
-
-            //bota final de string no fim
             novaMsgControle.conteudo[sizeof(novaMsgControle.conteudo) - 1] = '\0';
             sendMsg(novaMsgControle);
-
             if(debugando == 1){
                 printf("[DEBUG] Enviando vetor de distancia inicial para vizinho %d: %s\n", roteadores+1, stringControle);
             }
@@ -736,21 +722,22 @@ void *theadVetorDistancia(){
     {
         pthread_mutex_lock(&vetorDistancia.lock);
 
-        int mudou = 0;
-
-        // add +1 em todos os tempos dos vizinhos
+        //add +1 em todos os tempos dos vizinhos
         for (int i = 0; i < numRoteadores; i++) {
             if (vetorDistancia.vetores[i].isVisinho == 1) {
-
-         
-                vetorDistancia.vetores[i].rodadasSemResposta++;
+                //so add nos vizinhos validos
+                if (vetorDistancia.vetores[i].custo >= 0) {
+                    vetorDistancia.vetores[i].rodadasSemResposta++;
+                }
             }
         }
+
+        int mudou = 0;
 
         // pega o lock do vetor dos que chegaram
         pthread_mutex_lock(&vetoresParaAnalize.lock);
 
-        //ve se ja foi testado
+        // ve se ja foi testado
         for (int i = 0; i < numRoteadores; i++) {
             if (vetoresParaAnalize.testados[i] == 0) {
                 // percorre todos os destinos recebidos do roteador i
@@ -759,20 +746,11 @@ void *theadVetorDistancia(){
                     int destino = vetoresParaAnalize.vetoresNaoAnalizados[i].vetores[d].destino;
                     int custoRecebido = vetoresParaAnalize.vetoresNaoAnalizados[i].vetores[d].custo;
 
-                    //ignora ele mesmo
-                    if (destino == id){
-                        continue;
-                    }
-
-                    //ignora os errado
-                    if (destino <= 0 || custoRecebido < 0)
-                        continue;
-
-                    // custo ate o roteador que enviou (vai add no custo recebido
+                    // custo ate o roteador que enviou (vai add no custo recebido)
                     int custoAteVizinho = vetorDistancia.vetores[i].custo;
 
                     //reinicia o tempo que n mandou msg pq chegou nova
-                    //só reseta para o vizinho que enviou i
+                    //só reseta para o vizinho que enviou (i)
                     vetorDistancia.vetores[i].rodadasSemResposta = 0;
 
                     // se n der pra chegar (-1), pula
@@ -782,7 +760,7 @@ void *theadVetorDistancia(){
                     //custo total ate o destino via esse vizinho
                     int novoCusto = custoAteVizinho + custoRecebido;
 
-                   
+                    //ta certo?
                     //evita o contando até o infinito, se ta contando d+ pula
                     if (novoCusto > 32){
                         continue;
@@ -806,9 +784,9 @@ void *theadVetorDistancia(){
         //detecta enlaces caidos
         for (int i = 0; i < numRoteadores; i++) {
             if (vetorDistancia.vetores[i].isVisinho == 1 &&
-                vetorDistancia.vetores[i].rodadasSemResposta == 3) {
+                vetorDistancia.vetores[i].rodadasSemResposta >= 3) {
 
-                //tira como vizinho
+                printf("enlace com o roteador %d caiu! \n", i+1);
                 vetorDistancia.vetores[i].isVisinho = 0;
                 //custo infinito
                 vetorDistancia.vetores[i].custo = -1;
@@ -816,27 +794,24 @@ void *theadVetorDistancia(){
                 vetorDistancia.vetores[i].saida = -1;
 
                 mudou = 1;
-
-                
-                printf("Enlace com o roteador %d caiu!\n", i+1);
-                
-
             }
         }
 
-     
         //reseta os 0
         int anyZero = 0;
         for (int x = 0; x < numRoteadores; ++x) {
-            if (vetoresParaAnalize.testados[x] == 0) { anyZero = 1; break; }
+            if (vetoresParaAnalize.testados[x] == 0) { 
+                //achou um que nao foi testado
+                anyZero = 1; 
+                break; 
+        }
         }
         if (!anyZero) {
             //reset todas para 0 apenas se nenhuma estiver com 0
+            //inicia nova rodada
             for (int x = 0; x < numRoteadores; ++x)
                 vetoresParaAnalize.testados[x] = 0;
         }
-    
-       
 
         pthread_mutex_unlock(&vetoresParaAnalize.lock);
 
@@ -871,6 +846,50 @@ void *theadVetorDistancia(){
     return NULL;
 }
 
+// --- INÍCIO: Função para inicializar Falcon e gerar chaves ---
+void init_falcon_keys() {
+    sig_falcon = OQS_SIG_new("Falcon-512");
+    if (!sig_falcon) {
+        printf("Falha ao inicializar Falcon-512!\n");
+        exit(1);
+    }
+    falcon_public_key_len = sig_falcon->length_public_key;
+    falcon_secret_key_len = sig_falcon->length_secret_key;
+    falcon_public_key = malloc(falcon_public_key_len);
+    falcon_secret_key = malloc(falcon_secret_key_len);
+    if (!falcon_public_key || !falcon_secret_key) {
+        printf("Falha ao alocar memória para as chaves Falcon!\n");
+        exit(1);
+    }
+    if (OQS_SIG_keypair(sig_falcon, falcon_public_key, falcon_secret_key) != OQS_SUCCESS) {
+        printf("Falha ao gerar par de chaves Falcon!\n");
+        exit(1);
+    }
+    printf("[FALCON] Chave pública gerada (%zu bytes): ", falcon_public_key_len);
+    for (size_t i = 0; i < 8 && i < falcon_public_key_len; i++) printf("%02X ", falcon_public_key[i]);
+    printf("...\n");
+    printf("[FALCON] Chave secreta gerada (%zu bytes): ", falcon_secret_key_len);
+    for (size_t i = 0; i < 8 && i < falcon_secret_key_len; i++) printf("%02X ", falcon_secret_key[i]);
+    printf("...\n");
+}
+
+
+// --- INÍCIO: Função para assinar mensagem ---
+// Assina o conteúdo da mensagem antes de enviar
+int assinar_mensagem(const uint8_t *msg, size_t msg_len, uint8_t *assinatura, size_t *assinatura_len) {
+    return OQS_SIG_sign(sig_falcon, assinatura, assinatura_len, msg, msg_len, falcon_secret_key);
+}
+
+
+// --- INÍCIO: Função para verificar assinatura ---
+// Verifica a assinatura recebida usando a chave pública do vizinho
+int verificar_mensagem(const uint8_t *msg, size_t msg_len, const uint8_t *assinatura, size_t assinatura_len, int id_vizinho) {
+    return OQS_SIG_verify(sig_falcon, msg, msg_len, assinatura, assinatura_len, falcon_public_keys_vizinhos[id_vizinho]);
+}
+
+
+
+
 //terminal é a main
 int main(int argc, char *argv[])
 {
@@ -901,24 +920,12 @@ int main(int argc, char *argv[])
 
     printf("Roteador %d ouvindo na porta %d...\n", id, Port);
 
-
-
-
-
-
-
-
-
+    OQS_init();
+    init_falcon_keys();
 
     initFilas();
 
-
-
-
     pthread_t tEntrada, tSaida, tVetorDistancia,tpackManager;
-
-
-
 
     pthread_create(&tEntrada, NULL, theadFilaEntrada, NULL);
     pthread_create(&tSaida, NULL, theadFSaida, NULL);
@@ -941,7 +948,6 @@ int main(int argc, char *argv[])
         printf("2 - Enviar Mensagem\n");
         printf("3 - Pritar Topografia\n");
         printf("4 - Ativar/Desativar Debug\n");
-        printf("5 - Gerar HMAC\n");
         printf("0 - Sair\n");
         printf("-------------------------------\n");
         printf("Digite o numero da opcao desejada: \n");
@@ -1009,31 +1015,6 @@ int main(int argc, char *argv[])
             case 0:
                 printf("Saindo...\n");
                 return 0;
-            case 5:
-                const unsigned char *key = (unsigned char *)"minha_chave_secreta";
-                const unsigned char *msg = (unsigned char *)"pacote_exemplo";
-
-                unsigned char hmac_result[EVP_MAX_MD_SIZE];
-                unsigned int len = 0;
-
-                //gera o HMAC
-                //algoritmo de hash (SHA-256)
-                HMAC(EVP_sha256(),
-                    //chave secreta    
-                    key, strlen((char*)key),
-                    //mensagem a ser autenticada (pacote)
-                    msg, strlen((char*)msg),  
-                    //resultado do HMAC
-                    hmac_result, &len);    
-
-                //mostra o HMAC gerado em formato hexadecimal
-                printf("HMAC: ");
-                for (int i = 0; i < len; i++)
-                    printf("%02x", hmac_result[i]);
-                printf("\n");
-                
-                break;
-
             default:
                 printf("Opção inválida! Tente novamente.\n");
                 break;
@@ -1041,7 +1022,4 @@ int main(int argc, char *argv[])
             }
     
         }
-    
-    
-    
 }
